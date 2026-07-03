@@ -30,6 +30,15 @@ const deleteCookie = (name: string) => {
   document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=Lax; Secure`;
 };
 
+// Client-side cookie getter helper
+export const getCookie = (name: string): string | null => {
+  if (typeof document === "undefined") return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(";").shift() || null;
+  return null;
+};
+
 const authSlice = createSlice({
   name: "auth",
   initialState,
@@ -87,11 +96,11 @@ const authSlice = createSlice({
             return;
           }
         }
-        // If expired or missing, clean up
+        // If expired or missing, clean up access token from storage,
+        // but keep the refreshToken cookie so baseQuery can attempt to refresh it on the first request
         localStorage.removeItem("accessToken");
         localStorage.removeItem("accessTokenExpiry");
         localStorage.removeItem("authUser");
-        deleteCookie("refreshToken");
       }
     },
   },
