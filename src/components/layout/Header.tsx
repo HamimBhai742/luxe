@@ -33,7 +33,8 @@ export default function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-zinc-100 bg-white/80 backdrop-blur-md dark:border-zinc-900 dark:bg-black/80">
+    <>
+      <header className="sticky top-0 z-50 w-full border-b border-zinc-100 bg-white/80 backdrop-blur-md dark:border-zinc-900 dark:bg-black/80">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Left: Logo */}
         <div className="flex items-center">
@@ -214,31 +215,43 @@ export default function Header() {
         </div>
       </div>
 
+    </header>
+    
       {/* Logout Confirmation Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-900">
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Sign Out?</h3>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm transition-opacity duration-300">
+          <div className="w-full max-w-sm transform overflow-hidden rounded-2xl bg-white p-6 text-center shadow-2xl border border-zinc-100 dark:border-zinc-900 dark:bg-zinc-950 transition-all scale-100 duration-300">
+            {/* Sign Out Warning Icon */}
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 mb-4">
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.75" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
+            </div>
+            
+            <h3 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-white">Sign Out of LUXE</h3>
             <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-              Are you sure you want to log out of your LUXE account?
+              Are you sure you want to log out? You will need to sign in again to access your profile, cart, and orders.
             </p>
-            <div className="mt-6 flex justify-end gap-3">
+            
+            <div className="mt-6 flex flex-col sm:flex-row-reverse gap-3">
               <button
-                onClick={() => setIsModalOpen(false)}
-                className="rounded-xl border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white transition-colors"
-              >
-                Cancel
-              </button>
-              <button
+                type="button"
                 onClick={handleLogoutConfirm}
-                className="rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-500 transition-colors"
+                className="flex-1 rounded-xl bg-red-650 py-2.5 text-xs font-semibold border border-zinc-200 text-zinc-700 hover:text-white shadow-sm hover:bg-red-500 transition-colors"
               >
                 Yes, Sign Out
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="flex-1 rounded-xl border border-zinc-200 py-2.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
               </button>
             </div>
           </div>
         </div>
       )}
-    </header>
+    </>
   );
 }
