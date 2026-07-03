@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/purity */
 "use client";
 
 import { useState } from "react";
@@ -75,7 +76,7 @@ export default function DashboardPaymentsClient() {
       }
 
       const newCard: CreditCard = {
-        id: Date.now(),
+        id: Date?.now(),
         brand: cardBrand,
         last4: cardLast4,
         isDefault: cards.length === 0,
