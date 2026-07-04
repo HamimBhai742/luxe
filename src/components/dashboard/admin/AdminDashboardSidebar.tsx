@@ -80,7 +80,7 @@ export default function AdminDashboardSidebar({ onCloseMobileDrawer }: SidebarPr
     },
     {
       name: "Coupons",
-      path: "#",
+      path: "/admin/dashboard/coupons",
       icon: (
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.75" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 14.25l6-6m4.5-3.493V21a.75.75 0 01-1.127.65l-2.243-1.32-2.243 1.32a.75.75 0 01-.754 0l-2.243-1.32-2.243 1.32a.75.75 0 01-1.127-.65V3.757c0-.987.808-1.782 1.808-1.782h9.704c.983 0 1.785.785 1.808 1.768z" />
