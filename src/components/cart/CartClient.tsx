@@ -2,6 +2,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
@@ -13,6 +14,7 @@ interface CartClientProps {
 }
 
 export default function CartClient({ initialItems, recommended }: CartClientProps) {
+  const router = useRouter();
   const [cartItems, setCartItems] = useState<CartItem[]>(initialItems);
   const [promoInput, setPromoInput] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState(0); // 0 = 0%, 0.2 = 20%
@@ -106,8 +108,7 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
 
   // Checkout Simulation
   const handleCheckout = () => {
-    toast.success("Checkout successful! Your order has been placed.");
-    setCartItems([]);
+    router.push("/checkout");
   };
 
   return (
