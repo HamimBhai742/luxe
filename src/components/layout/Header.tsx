@@ -6,15 +6,32 @@ import { useAppSelector, useAppDispatch } from "@/lib/hooks";
 import { clearCredentials } from "@/lib/features/auth/authSlice";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
+import { useGetWishlistQuery } from "@/lib/features/api/wishlistApi";
 
 export default function Header() {
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  const cartItems = useAppSelector((state) => state.cart.items);
   const dispatch = useAppDispatch();
   const router = useRouter();
 
+  const { data: wishlistData } = useGetWishlistQuery(undefined, { skip: !isAuthenticated });
+
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const cartCount = mounted ? cartItems.reduce((acc, item) => acc + item.quantity, 0) : 0;
+  const wishlistCount = mounted && isAuthenticated && wishlistData?.success && wishlistData.data
+    ? wishlistData.data.length
+    : 0;
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -101,7 +118,10 @@ export default function Header() {
         {/* Right: Actions */}
         <div className="flex items-center space-x-5">
           {/* Favorites */}
-          <button className="text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors">
+          <Link
+            href="/dashboard/wishlist"
+            className="relative text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors"
+          >
             <svg
               className="h-6 w-6"
               fill="none"
@@ -115,7 +135,12 @@ export default function Header() {
                 d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
               />
             </svg>
-          </button>
+            {wishlistCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                {wishlistCount}
+              </span>
+            )}
+          </Link>
 
           {/* Cart with badge */}
           <Link href="/cart" className="relative text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white transition-colors">
@@ -132,9 +157,11 @@ export default function Header() {
                 d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
               />
             </svg>
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
-              3
-            </span>
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                {cartCount}
+              </span>
+            )}
           </Link>
 
           <ThemeToggle />

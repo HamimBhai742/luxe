@@ -373,7 +373,7 @@ export const ALL_PRODUCTS: Product[] = [
 ];
 
 export interface CartItem {
-  id: number;
+  id: string | number;
   name: string;
   brand: string;
   price: number;

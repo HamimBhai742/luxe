@@ -6,6 +6,11 @@ import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { addToCart } from "@/lib/features/cart/cartSlice";
+import { useGetWishlistQuery, useAddToWishlistMutation, useRemoveFromWishlistMutation } from "@/lib/features/api/wishlistApi";
+import { useRouter } from "next/navigation";
+import { useSyncDbCartMutation } from "@/lib/features/api/cartApi";
 
 interface Product {
   id: number;
@@ -29,6 +34,15 @@ interface CollectionsClientProps {
 const ITEMS_PER_PAGE = 6;
 
 export default function CollectionsClient({ products }: CollectionsClientProps) {
+  const dispatch = useAppDispatch();
+  const router = useRouter();
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { data: wishlistData } = useGetWishlistQuery(undefined, { skip: !isAuthenticated });
+  const [addToWishlist] = useAddToWishlistMutation();
+  const [removeFromWishlist] = useRemoveFromWishlistMutation();
+  const [syncDbCart] = useSyncDbCartMutation();
+  const dbWishlist = wishlistData?.success && wishlistData.data ? wishlistData.data : [];
+
   const [dbProducts, setDbProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [recentlyViewed, setRecentlyViewed] = useState<any[]>(() => {
@@ -116,22 +130,51 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
   };
 
   // Add to Favorites Toggle
-  const toggleFavorite = (productId: any) => {
-    setFavorites((prev) => {
-      const isFav = prev.includes(productId);
+  const toggleFavorite = async (productId: any, name = "Product") => {
+    if (!isAuthenticated) {
+      localStorage.setItem("pendingWishlistAdd", String(productId));
+      toast.info("Please log in to add items to your wishlist.");
+      router.push("/sign-in");
+      return;
+    }
+
+    const isFav = dbWishlist.some((item) => String(item.id) === String(productId));
+    try {
       if (isFav) {
-        toast.success("Removed from favorites");
-        return prev.filter((id) => id !== productId);
+        await removeFromWishlist({ productId: String(productId) }).unwrap();
+        toast.success(`Removed ${name} from wishlist`);
       } else {
-        toast.success("Added to favorites!");
-        return [...prev, productId];
+        await addToWishlist({ productId: String(productId) }).unwrap();
+        toast.success(`Added ${name} to wishlist!`);
       }
-    });
+    } catch (err) {
+      toast.error("Failed to update wishlist");
+    }
   };
 
-  // Add to Cart Simulation
-  const handleAddToCart = (productName: string) => {
-    toast.success(`Added ${productName} to cart!`);
+  // Add to Cart Functionality
+  const handleAddToCart = async (product: any) => {
+    dispatch(
+      addToCart({
+        id: product.id,
+        name: product.name,
+        brand: product.brand || "LUXE",
+        price: product.price,
+        image: product.image,
+        specsText: "Default Edition • Premium Grade",
+      })
+    );
+    toast.success(`Added ${product.name} to cart!`);
+
+    if (isAuthenticated) {
+      try {
+        await syncDbCart({
+          items: [{ productId: String(product.id), quantity: 1, specsText: "Default Edition • Premium Grade" }],
+        }).unwrap();
+      } catch (err) {
+        console.error("Failed to sync item addition to DB cart:", err);
+      }
+    }
   };
 
   const activeProducts = dbProducts.length > 0 ? dbProducts : products;
@@ -435,7 +478,10 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 sm:gap-x-6 gap-y-8 sm:gap-y-10">
               {paginatedProducts.map((product) => {
-                const isFavorite = favorites.includes(product.id);
+                const isProductInWishlist = isAuthenticated 
+                  ? dbWishlist.some((item) => String(item.id) === String(product.id))
+                  : false;
+                const isFavorite = isAuthenticated ? isProductInWishlist : favorites.includes(product.id);
                 return (
                   <Link key={product.id} href={`/collections/${product.id}`} className="group relative flex flex-col cursor-pointer bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-900 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
                     
@@ -453,7 +499,8 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleFavorite(product.id);
+                          e.preventDefault();
+                          toggleFavorite(product.id, product.name);
                         }}
                         className="absolute top-3 right-3 z-20 flex h-7.5 w-7.5 sm:h-8.5 sm:w-8.5 items-center justify-center rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md shadow-sm text-zinc-650 hover:text-red-500 dark:text-zinc-300 dark:hover:text-red-500 transition-colors cursor-pointer"
                       >
@@ -525,7 +572,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleAddToCart(product.name);
+                              handleAddToCart(product);
                             }}
                             className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition-all duration-200 cursor-pointer"
                           >
@@ -538,7 +585,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleAddToCart(product.name);
+                              handleAddToCart(product);
                             }}
                             className="sm:hidden flex h-7.5 w-7.5 items-center justify-center rounded-full bg-zinc-200/60 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 transition-colors cursor-pointer"
                           >
@@ -555,13 +602,15 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
               })}
             </div>
           ) : (
-            // LIST VIEWMODE
             <div className="space-y-4">
               {paginatedProducts.map((product) => {
-                const isFavorite = favorites.includes(product.id);
+                const isProductInWishlist = isAuthenticated 
+                  ? dbWishlist.some((item) => String(item.id) === String(product.id))
+                  : false;
+                const isFavorite = isAuthenticated ? isProductInWishlist : favorites.includes(product.id);
                 return (
                   <Link key={product.id} href={`/collections/${product.id}`} className="group flex bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-900 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
-                    <div className="relative w-36 sm:w-48 aspect-square shrink-0 bg-zinc-100 dark:bg-zinc-950 overflow-hidden">
+                    <div className="relative w-36 sm:w-48 aspect-square shrink-0 bg-zinc-100 dark:bg-zinc-955 overflow-hidden">
                       <Image
                         src={product.image}
                         alt={product.name}
@@ -599,8 +648,12 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
                         </div>
                         
                         <button
-                          onClick={() => toggleFavorite(product.id)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-50 dark:bg-zinc-800 text-zinc-650 hover:text-red-500 dark:hover:text-red-500 transition-colors shadow-sm cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleFavorite(product.id, product.name);
+                          }}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-50 dark:bg-zinc-800 text-zinc-655 hover:text-red-500 dark:hover:text-red-500 transition-colors shadow-sm cursor-pointer"
                         >
                           <svg className={`h-4.5 w-4.5 ${isFavorite ? "fill-red-500 stroke-red-500" : "stroke-current"}`} fill="none" viewBox="0 0 24 24" strokeWidth="2">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
@@ -617,7 +670,11 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
                         </div>
 
                         <button
-                          onClick={() => handleAddToCart(product.name)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleAddToCart(product);
+                          }}
                           className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500 shadow-sm transition-all cursor-pointer"
                         >
                           <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">

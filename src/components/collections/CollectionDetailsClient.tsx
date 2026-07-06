@@ -5,6 +5,11 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { addToCart } from "@/lib/features/cart/cartSlice";
+import { useRouter } from "next/navigation";
+import { useGetWishlistQuery, useAddToWishlistMutation, useRemoveFromWishlistMutation } from "@/lib/features/api/wishlistApi";
+import { useSyncDbCartMutation } from "@/lib/features/api/cartApi";
 
 interface ProductReview {
   author: string;
@@ -47,10 +52,25 @@ export default function CollectionDetailsClient({
   product,
   allProducts,
 }: CollectionDetailsClientProps) {
+  const dispatch = useAppDispatch();
+  const router = useRouter();
+  
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { data: wishlistData } = useGetWishlistQuery(undefined, { skip: !isAuthenticated });
+  const [addToWishlist] = useAddToWishlistMutation();
+  const [removeFromWishlist] = useRemoveFromWishlistMutation();
+  const [syncDbCart] = useSyncDbCartMutation();
+
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [selectedColor, setSelectedColor] = useState(product.colors[0] || "");
-  const [isFavorite, setIsFavorite] = useState(false);
+  const [localIsFavorite, setLocalIsFavorite] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState("shop");
+
+  const wishlist = wishlistData?.success && wishlistData.data ? wishlistData.data : [];
+  const isProductInWishlist = isAuthenticated 
+    ? wishlist.some((item) => String(item.id) === String(product.id))
+    : false;
+  const isFavorite = isAuthenticated ? isProductInWishlist : localIsFavorite;
 
   // Scroll to top and track recently viewed product on load
   useEffect(() => {
@@ -85,20 +105,74 @@ export default function CollectionDetailsClient({
     }
   }, [product.id, product]);
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
+    const specsText = selectedColor ? `${selectedColor} • Premium Grade` : "Default Edition • Premium Grade";
+    dispatch(
+      addToCart({
+        id: product.id,
+        name: product.name,
+        brand: product.brand || "LUXE",
+        price: product.price,
+        image: product.image,
+        specsText,
+      })
+    );
     toast.success(`Added ${product.name} to cart!`);
+
+    if (isAuthenticated) {
+      try {
+        await syncDbCart({
+          items: [{ productId: String(product.id), quantity: 1, specsText }],
+        }).unwrap();
+      } catch (err) {
+        console.error("Failed to sync item addition to DB cart:", err);
+      }
+    }
   };
 
-  const handleBuyNow = () => {
-    toast.success(`Proceeding to checkout with ${product.name}!`);
+  const handleBuyNow = async () => {
+    const specsText = selectedColor ? `${selectedColor} • Premium Grade` : "Default Edition • Premium Grade";
+    dispatch(
+      addToCart({
+        id: product.id,
+        name: product.name,
+        brand: product.brand || "LUXE",
+        price: product.price,
+        image: product.image,
+        specsText,
+      })
+    );
+
+    if (isAuthenticated) {
+      try {
+        await syncDbCart({
+          items: [{ productId: String(product.id), quantity: 1, specsText }],
+        }).unwrap();
+      } catch (err) {
+        console.error("Failed to sync buy now item to DB cart:", err);
+      }
+    }
+    router.push("/checkout");
   };
 
-  const toggleFavorite = () => {
-    setIsFavorite(!isFavorite);
-    if (!isFavorite) {
-      toast.success("Added to favorites!");
-    } else {
-      toast.success("Removed from favorites");
+  const toggleFavorite = async () => {
+    if (!isAuthenticated) {
+      localStorage.setItem("pendingWishlistAdd", String(product.id));
+      toast.info("Please log in to add items to your wishlist.");
+      router.push("/sign-in");
+      return;
+    }
+
+    try {
+      if (isProductInWishlist) {
+        await removeFromWishlist({ productId: String(product.id) }).unwrap();
+        toast.success("Removed from wishlist!");
+      } else {
+        await addToWishlist({ productId: String(product.id) }).unwrap();
+        toast.success("Added to wishlist!");
+      }
+    } catch (err) {
+      toast.error("Failed to update wishlist");
     }
   };
 

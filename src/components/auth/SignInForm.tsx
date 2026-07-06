@@ -4,11 +4,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useLoginMutation, useGoogleLoginMutation } from "@/lib/features/auth/authApi";
-import { useAppDispatch } from "@/lib/hooks";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { setCredentials } from "@/lib/features/auth/authSlice";
+import { setCartItems } from "@/lib/features/cart/cartSlice";
 import { useRouter } from "next/navigation";
 import { loadGoogleGIS } from "@/lib/googleOAuth";
 import { toast } from "sonner";
+import { useAddToWishlistMutation } from "@/lib/features/api/wishlistApi";
+import { useSyncDbCartMutation } from "@/lib/features/api/cartApi";
 
 export default function SignInForm() {
   const [email, setEmail] = useState("");
@@ -21,6 +24,38 @@ export default function SignInForm() {
 
   const [login, { isLoading }] = useLoginMutation();
   const [googleLogin, { isLoading: isGoogleLoading }] = useGoogleLoginMutation();
+  const [addToWishlist] = useAddToWishlistMutation();
+  const [syncDbCart] = useSyncDbCartMutation();
+  const cartItems = useAppSelector((state) => state.cart.items);
+
+  const syncLocalCartToBackend = async () => {
+    if (cartItems.length > 0) {
+      try {
+        const payload = {
+          items: cartItems.map((item) => ({
+            productId: String(item.id),
+            quantity: item.quantity,
+            specsText: item.specsText,
+          })),
+        };
+        const syncResult = await syncDbCart(payload).unwrap();
+        if (syncResult.success && syncResult.data) {
+          const mapped = syncResult.data.map((item: any) => ({
+            id: item.productId,
+            name: item.product.name,
+            brand: item.product.brand || "LUXE",
+            price: item.product.price,
+            image: item.product.image,
+            quantity: item.quantity,
+            specsText: item.specsText || "",
+          }));
+          dispatch(setCartItems(mapped));
+        }
+      } catch (err) {
+        console.error("Failed to sync guest cart items on login:", err);
+      }
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setErrorMessage("");
@@ -41,6 +76,21 @@ export default function SignInForm() {
                   })
                 );
                 toast.success("Signed in successfully with Google!");
+                await syncLocalCartToBackend();
+                
+                const pendingWishlistId = localStorage.getItem("pendingWishlistAdd");
+                if (pendingWishlistId) {
+                  try {
+                    await addToWishlist({ productId: pendingWishlistId }).unwrap();
+                    localStorage.removeItem("pendingWishlistAdd");
+                    toast.success("Product successfully added to your wishlist!");
+                    router.push("/dashboard/wishlist");
+                    return;
+                  } catch (wishlistErr) {
+                    console.error("Failed to auto-add pending wishlist item:", wishlistErr);
+                  }
+                }
+                
                 router.push("/");
               }
             } catch (err: any) {
@@ -76,6 +126,21 @@ export default function SignInForm() {
           })
         );
         toast.success("Signed in successfully!");
+        await syncLocalCartToBackend();
+        
+        const pendingWishlistId = localStorage.getItem("pendingWishlistAdd");
+        if (pendingWishlistId && result.data.role !== "admin" && email !== "admin@gmail.com") {
+          try {
+            await addToWishlist({ productId: pendingWishlistId }).unwrap();
+            localStorage.removeItem("pendingWishlistAdd");
+            toast.success("Product successfully added to your wishlist!");
+            router.push("/dashboard/wishlist");
+            return;
+          } catch (wishlistErr) {
+            console.error("Failed to auto-add pending wishlist item:", wishlistErr);
+          }
+        }
+
         if (result.data.role === "admin" || email === "admin@gmail.com") {
           router.push("/admin/dashboard");
         } else {

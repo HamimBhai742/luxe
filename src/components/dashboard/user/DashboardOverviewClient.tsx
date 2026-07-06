@@ -1,9 +1,16 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react/no-unescaped-entities */
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { toast } from "sonner";
+import { useAppDispatch } from "@/lib/hooks";
+import { addToCart } from "@/lib/features/cart/cartSlice";
+import { useGetWishlistQuery, useAddToWishlistMutation, useRemoveFromWishlistMutation } from "@/lib/features/api/wishlistApi";
+import { useSyncDbCartMutation } from "@/lib/features/api/cartApi";
 
 interface Order {
   id: string;
@@ -50,24 +57,51 @@ const RECOMMENDED_ITEMS = [
 ];
 
 export default function DashboardOverviewClient() {
+  const dispatch = useAppDispatch();
   const [orders] = useState<Order[]>(INITIAL_ORDERS);
-  const [favorites, setFavorites] = useState<number[]>([]);
+  const { data: wishlistData } = useGetWishlistQuery();
+  const [addToWishlist] = useAddToWishlistMutation();
+  const [removeFromWishlist] = useRemoveFromWishlistMutation();
+  const [syncDbCart] = useSyncDbCartMutation();
 
-  const toggleFavorite = (id: number, name: string) => {
-    setFavorites((prev) => {
-      const isFav = prev.includes(id);
+  const wishlist = wishlistData?.success && wishlistData.data ? wishlistData.data : [];
+
+  const toggleFavorite = async (id: string | number, name: string) => {
+    const stringId = String(id);
+    const isFav = wishlist.some((item) => String(item.id) === stringId);
+    try {
       if (isFav) {
+        await removeFromWishlist({ productId: stringId }).unwrap();
         toast.success(`Removed ${name} from wishlist`);
-        return prev.filter((item) => item !== id);
       } else {
+        await addToWishlist({ productId: stringId }).unwrap();
         toast.success(`Added ${name} to wishlist!`);
-        return [...prev, id];
       }
-    });
+    } catch (err) {
+      toast.error("Failed to update wishlist");
+    }
   };
 
-  const handleAddToCart = (name: string) => {
-    toast.success(`Added ${name} to cart!`);
+  const handleAddToCart = async (item: any) => {
+    dispatch(
+      addToCart({
+        id: item.id,
+        name: item.name,
+        brand: "LUXE",
+        price: item.price,
+        image: item.image,
+        specsText: "Default Edition • Premium Grade",
+      })
+    );
+    toast.success(`Added ${item.name} to cart!`);
+
+    try {
+      await syncDbCart({
+        items: [{ productId: String(item.id), quantity: 1, specsText: "Default Edition • Premium Grade" }],
+      }).unwrap();
+    } catch (err) {
+      console.error("Failed to sync item addition to DB cart:", err);
+    }
   };
 
   const renderStatusPill = (status: Order["status"]) => {
@@ -239,7 +273,7 @@ export default function DashboardOverviewClient() {
         
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           {RECOMMENDED_ITEMS.map((item) => {
-            const isFav = favorites.includes(item.id);
+            const isFav = wishlist.some((fav) => String(fav.id) === String(item.id));
             return (
               <div
                 key={item.id}
@@ -248,9 +282,11 @@ export default function DashboardOverviewClient() {
                 
                 {/* Image showcase */}
                 <div className="relative aspect-square w-full bg-zinc-50 dark:bg-zinc-950 overflow-hidden flex items-center justify-center p-4">
-                  <img
+                  <Image
                     src={item.image}
                     alt={item.name}
+                    width={150}
+                    height={150}
                     className="object-contain max-h-[85%] max-w-[85%] transition-transform duration-500 ease-out group-hover:scale-103"
                   />
                   
@@ -283,7 +319,7 @@ export default function DashboardOverviewClient() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleAddToCart(item.name);
+                        handleAddToCart(item);
                       }}
                       className="rounded-lg bg-zinc-50 hover:bg-zinc-100 text-zinc-700 p-1.5 dark:bg-zinc-800 dark:text-zinc-350 dark:hover:bg-zinc-700 transition-colors cursor-pointer shadow-xs"
                       title="Add to Cart"

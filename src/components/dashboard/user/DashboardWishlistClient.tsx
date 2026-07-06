@@ -1,9 +1,15 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import { useAppDispatch } from "@/lib/hooks";
+import { addToCart } from "@/lib/features/cart/cartSlice";
+import { useGetWishlistQuery, useAddToWishlistMutation, useRemoveFromWishlistMutation } from "@/lib/features/api/wishlistApi";
+import { useSyncDbCartMutation } from "@/lib/features/api/cartApi";
 
 interface WishlistItem {
   id: number;
@@ -76,28 +82,66 @@ const SIMILAR_PRODUCTS: WishlistItem[] = [
 ];
 
 export default function DashboardWishlistClient() {
-  const [wishlist, setWishlist] = useState<WishlistItem[]>(INITIAL_WISHLIST);
+  const dispatch = useAppDispatch();
+  const { data: wishlistData, isLoading: isWishlistLoading } = useGetWishlistQuery();
+  const [removeFromWishlist] = useRemoveFromWishlistMutation();
+  const [syncDbCart] = useSyncDbCartMutation();
+
   const [sortOption, setSortOption] = useState("Recently Added");
   const [activeMobileTab, setActiveMobileTab] = useState("wishlist");
 
-  const handleRemoveItem = (id: number, name: string) => {
-    setWishlist((prev) => prev.filter((item) => item.id !== id));
-    toast.success(`Removed ${name} from your wishlist`);
-  };
+  const wishlist = wishlistData?.success && wishlistData.data ? wishlistData.data : [];
 
-  const handleAddToCart = (name: string) => {
-    toast.success(`Added ${name} to shopping cart!`);
-  };
-
-  const handleAddToWishlist = (product: WishlistItem) => {
-    const exists = wishlist.some((item) => item.id === product.id);
-    if (exists) {
-      toast.info(`${product.name} is already in your wishlist`);
-    } else {
-      setWishlist((prev) => [product, ...prev]);
-      toast.success(`Added ${product.name} to wishlist!`);
+  const handleRemoveItem = async (id: string | number, name: string) => {
+    try {
+      await removeFromWishlist({ productId: String(id) }).unwrap();
+      toast.success(`Removed ${name} from your wishlist`);
+    } catch (err) {
+      toast.error("Failed to remove item from wishlist");
     }
   };
+
+  const handleAddToCart = async (item: any) => {
+    dispatch(
+      addToCart({
+        id: item.id,
+        name: item.name,
+        brand: item.brand || "LUXE",
+        price: item.price,
+        image: item.image,
+        specsText: "Default Edition • Premium Grade",
+      })
+    );
+    toast.success(`Added ${item.name} to shopping cart!`);
+
+    try {
+      await syncDbCart({
+        items: [{ productId: String(item.id), quantity: 1, specsText: "Default Edition • Premium Grade" }],
+      }).unwrap();
+    } catch (err) {
+      console.error("Failed to sync item addition to DB cart:", err);
+    }
+  };
+
+  const [addToWishlist] = useAddToWishlistMutation();
+
+  const handleAddToWishlist = async (product: any) => {
+    try {
+      await addToWishlist({ productId: String(product.id) }).unwrap();
+      toast.success(`Added ${product.name} to wishlist!`);
+    } catch (err) {
+      toast.error("Failed to add item to wishlist");
+    }
+  };
+
+  if (isWishlistLoading) {
+    return (
+      <div className="space-y-8 pb-16 flex flex-col items-center justify-center min-h-[50vh]">
+        <div className="h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-zinc-550 dark:text-zinc-400 font-bold font-serif text-sm tracking-wide">Loading your wishlist...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 pb-16">
@@ -184,7 +228,7 @@ export default function DashboardWishlistClient() {
                   <div className="flex justify-between items-center mt-4">
                     <span className="text-sm font-extrabold text-zinc-900 dark:text-white">${item.price.toFixed(2)}</span>
                     <button
-                      onClick={() => handleAddToCart(item.name)}
+                      onClick={() => handleAddToCart(item)}
                       className="rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 text-[10px] font-bold shadow-xs hover:shadow-md transition-all cursor-pointer"
                     >
                       Add to Cart
@@ -264,7 +308,7 @@ export default function DashboardWishlistClient() {
                     </span>
                   </div>
                   <button
-                    onClick={() => handleAddToCart(item.name)}
+                    onClick={() => handleAddToCart(item)}
                     className="w-full bg-blue-600 text-white rounded-lg py-1.5 text-[10px] font-bold shadow-xs cursor-pointer text-center"
                   >
                     Add to Cart

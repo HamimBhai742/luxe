@@ -1,12 +1,19 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react/no-unescaped-entities */
+
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import { CartItem, RecommendedProduct } from "@/lib/mockData";
+import { useAppSelector, useAppDispatch } from "@/lib/hooks";
+import { updateQuantity, removeFromCart, clearCart, addToCart } from "@/lib/features/cart/cartSlice";
+import { useGetProductsQuery } from "@/lib/features/api/productApi";
+import { useSyncDbCartMutation, useRemoveDbCartItemMutation, useClearDbCartMutation } from "@/lib/features/api/cartApi";
 
 interface CartClientProps {
   initialItems: CartItem[];
@@ -15,12 +22,45 @@ interface CartClientProps {
 
 export default function CartClient({ initialItems, recommended }: CartClientProps) {
   const router = useRouter();
-  const [cartItems, setCartItems] = useState<CartItem[]>(initialItems);
+  const dispatch = useAppDispatch();
+  const cartItems = useAppSelector((state) => state.cart.items);
+  const { isAuthenticated } = useAppSelector((state) => state.auth);
+  const { data: productsData } = useGetProductsQuery();
+
+  const [syncDbCart] = useSyncDbCartMutation();
+  const [removeDbCartItem] = useRemoveDbCartItemMutation();
+  const [clearDbCart] = useClearDbCartMutation();
+
   const [promoInput, setPromoInput] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState(0); // 0 = 0%, 0.2 = 20%
   const [promoError, setPromoError] = useState("");
   const [promoSuccess, setPromoSuccess] = useState("");
   const [activeMobileTab, setActiveMobileTab] = useState("cart");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const recommendedList = useMemo(() => {
+    if (!productsData?.success || !productsData.data) {
+      return recommended;
+    }
+    const dbProducts = productsData.data;
+    const cartItemNames = new Set(cartItems.map((item) => item.name));
+    const filtered = dbProducts.filter((p) => !cartItemNames.has(p.name));
+    const mapped = filtered.map(p => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      image: p.image,
+      brand: p.brand
+    }));
+    return mapped.length > 0 ? mapped.slice(0, 4) : dbProducts.slice(0, 4);
+  }, [productsData, cartItems, recommended]);
 
   // Derived calculations
   const itemsCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
@@ -33,27 +73,55 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
   const mobileTotal = subtotal - discountAmount;
 
   // Quantity updates
-  const updateQuantity = (id: number, delta: number) => {
-    setCartItems((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const newQty = item.quantity + delta;
-          return { ...item, quantity: Math.max(1, newQty) };
-        }
-        return item;
-      })
-    );
+  const handleUpdateQuantity = async (id: string | number, currentQty: number, delta: number) => {
+    const newQty = currentQty + delta;
+    if (newQty < 1) return;
+
+    dispatch(updateQuantity({ id, quantity: newQty }));
+
+    if (isAuthenticated) {
+      try {
+        await syncDbCart({
+          items: [{ productId: String(id), quantity: newQty }],
+          overwrite: true,
+        }).unwrap();
+      } catch (err) {
+        console.error("Failed to update cart item quantity in DB:", err);
+      }
+    }
   };
 
   // Remove item
-  const handleRemove = (id: number, name: string) => {
-    setCartItems((prev) => prev.filter((item) => item.id !== id));
+  const handleRemove = async (id: string | number, name: string) => {
+    dispatch(removeFromCart({ id }));
     toast.success(`Removed ${name} from cart`);
+
+    if (isAuthenticated) {
+      try {
+        await removeDbCartItem({ productId: String(id) }).unwrap();
+      } catch (err) {
+        console.error("Failed to remove cart item from DB:", err);
+      }
+    }
   };
 
   // Save for later
   const handleSaveForLater = (name: string) => {
     toast.success(`Saved ${name} for later!`);
+  };
+
+  // Clear cart
+  const handleClearCart = async () => {
+    dispatch(clearCart());
+    toast.success("Shopping cart cleared");
+
+    if (isAuthenticated) {
+      try {
+        await clearDbCart().unwrap();
+      } catch (err) {
+        console.error("Failed to clear cart in DB:", err);
+      }
+    }
   };
 
   // Promo code
@@ -80,36 +148,46 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
   };
 
   // Add recommended product
-  const handleAddRecommended = (rec: RecommendedProduct) => {
-    setCartItems((prev) => {
-      const existing = prev.find((item) => item.name === rec.name);
-      if (existing) {
-        toast.success(`Incremented quantity of ${rec.name}`);
-        return prev.map((item) =>
-          item.name === rec.name ? { ...item, quantity: item.quantity + 1 } : item
-        );
-      } else {
-        toast.success(`Added ${rec.name} to cart!`);
-        return [
-          ...prev,
-          {
-            id: rec.id,
-            name: rec.name,
-            brand: "AURATECH",
-            price: rec.price,
-            image: rec.image,
-            quantity: 1,
-            specsText: "Default Edition • Premium Grade",
-          },
-        ];
+  const handleAddRecommended = async (rec: any) => {
+    const brand = rec.brand || "AURATECH";
+    dispatch(
+      addToCart({
+        id: rec.id,
+        name: rec.name,
+        brand,
+        price: rec.price,
+        image: rec.image,
+        specsText: "Default Edition • Premium Grade",
+      })
+    );
+    toast.success(`Added ${rec.name} to cart!`);
+
+    if (isAuthenticated) {
+      try {
+        await syncDbCart({
+          items: [{ productId: String(rec.id), quantity: 1, specsText: "Default Edition • Premium Grade" }],
+        }).unwrap();
+      } catch (err) {
+        console.error("Failed to sync recommended item to DB:", err);
       }
-    });
+    }
   };
 
   // Checkout Simulation
   const handleCheckout = () => {
     router.push("/checkout");
   };
+
+  if (!mounted) {
+    return (
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 min-h-[60vh] flex flex-col items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-zinc-500 dark:text-zinc-400 font-bold font-serif text-sm tracking-wide">Loading your luxury bag...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-zinc-50/30 dark:bg-zinc-950/20 transition-colors duration-300 min-h-screen">
@@ -120,9 +198,22 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
       <div className="hidden md:block mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         
         {/* Title */}
-        <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white mb-8">
-          Shopping Cart {cartItems.length > 0 && `(${itemsCount} ${itemsCount === 1 ? 'Item' : 'Items'})`}
-        </h1>
+        <div className="flex justify-between items-center mb-8 border-b border-zinc-200 dark:border-zinc-800 pb-4">
+          <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-white">
+            Shopping Cart {cartItems.length > 0 && `(${itemsCount} ${itemsCount === 1 ? 'Item' : 'Items'})`}
+          </h1>
+          {cartItems.length > 0 && (
+            <button
+              onClick={handleClearCart}
+              className="text-xs font-bold text-red-650 hover:text-red-500 hover:scale-102 active:scale-98 transition-all flex items-center gap-1.5 cursor-pointer bg-red-50 dark:bg-red-950/20 px-3.5 py-2 rounded-xl border border-red-100 dark:border-red-950/50"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              <span>Clear Cart</span>
+            </button>
+          )}
+        </div>
 
         {cartItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center rounded-3xl bg-white dark:bg-zinc-900/50 border border-zinc-150 dark:border-zinc-800 p-8 shadow-sm">
@@ -186,10 +277,11 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
                     <span className="text-base font-extrabold text-zinc-900 dark:text-zinc-50">
                       ${(item.price * item.quantity).toLocaleString()}.00
                     </span>
-                    <div className="flex items-center border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-950 overflow-hidden shadow-xs">
+                    <div className="flex items-center border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-955 overflow-hidden shadow-xs">
                       <button
-                        onClick={() => updateQuantity(item.id, -1)}
-                        className="px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 font-bold transition-colors cursor-pointer"
+                        onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)}
+                        className="px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 font-bold transition-colors cursor-pointer disabled:opacity-30"
+                        disabled={item.quantity <= 1}
                       >
                         &minus;
                       </button>
@@ -197,7 +289,7 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
                         {item.quantity}
                       </span>
                       <button
-                        onClick={() => updateQuantity(item.id, 1)}
+                        onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)}
                         className="px-3 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 font-bold transition-colors cursor-pointer"
                       >
                         &#43;
@@ -314,7 +406,7 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
             Recommended for You
           </h2>
           <div className="grid grid-cols-4 gap-6">
-            {recommended.map((rec) => (
+            {recommendedList.map((rec) => (
               <div
                 key={rec.id}
                 className="group relative flex flex-col bg-white dark:bg-zinc-900 border border-zinc-150 dark:border-zinc-900 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300"
@@ -354,10 +446,18 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
       <div className="md:hidden flex flex-col min-h-screen bg-zinc-50/40 dark:bg-zinc-950/20 pb-72">
         
         {/* Title Heading */}
-        <div className="px-4 pt-6 pb-2">
+        <div className="px-4 pt-6 pb-2 flex justify-between items-center border-b border-zinc-150/60 dark:border-zinc-800 mb-2">
           <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white font-serif">
             Shopping Cart ({itemsCount})
           </h1>
+          {cartItems.length > 0 && (
+            <button
+              onClick={handleClearCart}
+              className="text-xs font-bold text-red-650 hover:text-red-500 transition-colors bg-red-50 dark:bg-red-950/20 px-2.5 py-1 rounded-lg border border-red-100 dark:border-red-950/50 cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
         {cartItems.length === 0 ? (
@@ -402,8 +502,9 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
                       {/* Quantity select */}
                       <div className="flex items-center border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-950 overflow-hidden shadow-xs scale-90 -ml-1">
                         <button
-                          onClick={() => updateQuantity(item.id, -1)}
-                          className="px-2.5 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 font-bold transition-colors cursor-pointer"
+                          onClick={() => handleUpdateQuantity(item.id, item.quantity, -1)}
+                          className="px-2.5 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 font-bold transition-colors cursor-pointer disabled:opacity-30"
+                          disabled={item.quantity <= 1}
                         >
                           &minus;
                         </button>
@@ -411,7 +512,7 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
                           {item.quantity}
                         </span>
                         <button
-                          onClick={() => updateQuantity(item.id, 1)}
+                          onClick={() => handleUpdateQuantity(item.id, item.quantity, 1)}
                           className="px-2.5 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-500 font-bold transition-colors cursor-pointer"
                         >
                           &#43;
@@ -467,7 +568,7 @@ export default function CartClient({ initialItems, recommended }: CartClientProp
                 Recommended for You
               </h2>
               <div className="grid grid-cols-2 gap-4">
-                {recommended.slice(0, 2).map((rec) => (
+                {recommendedList.slice(0, 2).map((rec) => (
                   <div
                     key={rec.id}
                     className="flex flex-col bg-white dark:bg-zinc-900 border border-zinc-150/60 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm"
