@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/purity */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 interface CreditCard {
@@ -28,8 +28,23 @@ const INITIAL_BKASH: BkashAccount[] = [
 ];
 
 export default function DashboardPaymentsClient() {
-  const [cards, setCards] = useState<CreditCard[]>(INITIAL_CARDS);
-  const [bkashAccounts, setBkashAccounts] = useState<BkashAccount[]>(INITIAL_BKASH);
+  const [cards, setCards] = useState<CreditCard[]>(() => {
+    if (typeof window !== "undefined") {
+      const savedCards = localStorage.getItem("luxe_saved_cards");
+      if (savedCards) return JSON.parse(savedCards);
+      localStorage.setItem("luxe_saved_cards", JSON.stringify(INITIAL_CARDS));
+    }
+    return INITIAL_CARDS;
+  });
+
+  const [bkashAccounts, setBkashAccounts] = useState<BkashAccount[]>(() => {
+    if (typeof window !== "undefined") {
+      const savedBkash = localStorage.getItem("luxe_saved_bkash");
+      if (savedBkash) return JSON.parse(savedBkash);
+      localStorage.setItem("luxe_saved_bkash", JSON.stringify(INITIAL_BKASH));
+    }
+    return INITIAL_BKASH;
+  });
 
   // Modals state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,79 +52,144 @@ export default function DashboardPaymentsClient() {
 
   // Form states
   const [cardBrand, setCardBrand] = useState<"Visa" | "Mastercard">("Visa");
-  const [cardLast4, setCardLast4] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
   const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvc, setCardCvc] = useState("");
   const [bkashNumber, setBkashNumber] = useState("");
 
   const handleSetDefault = (cardId: number) => {
-    setCards((prev) =>
-      prev.map((c) => ({
-        ...c,
-        isDefault: c.id === cardId,
-      }))
-    );
+    const updated = cards.map((c) => ({
+      ...c,
+      isDefault: c.id === cardId,
+    }));
+    setCards(updated);
+    localStorage.setItem("luxe_saved_cards", JSON.stringify(updated));
     const selected = cards.find((c) => c.id === cardId);
     toast.success(`Set ${selected?.brand} ending in ${selected?.last4} as default payment method`);
   };
 
   const handleRemoveCard = (cardId: number, brand: string, last4: string) => {
-    setCards((prev) => prev.filter((c) => c.id !== cardId));
+    const updated = cards.filter((c) => c.id !== cardId);
+    setCards(updated);
+    localStorage.setItem("luxe_saved_cards", JSON.stringify(updated));
     toast.success(`Removed ${brand} ending in ${last4} from your account`);
   };
 
   const handleRemoveBkash = (id: number, num: string) => {
-    setBkashAccounts((prev) => prev.filter((b) => b.id !== id));
+    const updated = bkashAccounts.filter((b) => b.id !== id);
+    setBkashAccounts(updated);
+    localStorage.setItem("luxe_saved_bkash", JSON.stringify(updated));
     toast.success(`Removed bKash number ${num} successfully`);
+  };
+
+  const handleCardNumberChange = (val: string) => {
+    const clean = val.replace(/\D/g, "");
+    const limited = clean.slice(0, 16);
+    
+    if (limited.startsWith("4")) {
+      setCardBrand("Visa");
+    } else if (limited.startsWith("5")) {
+      setCardBrand("Mastercard");
+    }
+
+    const parts = [];
+    for (let i = 0; i < limited.length; i += 4) {
+      parts.push(limited.slice(i, i + 4));
+    }
+    setCardNumber(parts.join(" "));
+  };
+
+  const handleExpiryChange = (val: string) => {
+    const clean = val.replace(/\D/g, "");
+    let formatted = "";
+    if (clean.length > 0) {
+      const month = clean.slice(0, 2);
+      formatted += month;
+      if (clean.length > 2) {
+        const year = clean.slice(2, 6);
+        formatted += "/" + year;
+      } else if (month.length === 2 && !val.endsWith("/")) {
+        formatted += "/";
+      }
+    }
+    setCardExpiry(formatted);
+  };
+
+  const handleCvcChange = (val: string) => {
+    const clean = val.replace(/\D/g, "").slice(0, 4);
+    setCardCvc(clean);
   };
 
   const handleAddPaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (modalType === "card") {
-      if (!cardLast4 || cardLast4.length !== 4 || isNaN(Number(cardLast4))) {
-        toast.error("Please enter a valid 4-digit card number suffix");
+      if (cards.length >= 5) {
+        toast.error("Limit exceeded: You can only save up to 5 credit/debit cards.");
         return;
       }
-      if (!cardExpiry || !cardExpiry.includes("/")) {
-        toast.error("Please specify a valid expiry date (MM/YYYY)");
+
+      const cleanNum = cardNumber.replace(/\s/g, "");
+      if (cleanNum.length < 16) {
+        toast.error("Please enter a valid 16-digit card number.");
+        return;
+      }
+
+      if (!cardExpiry || !cardExpiry.includes("/") || cardExpiry.split("/")[1]?.length < 4) {
+        toast.error("Please enter a valid expiry date (MM/YYYY).");
+        return;
+      }
+
+      if (!cardCvc || cardCvc.length < 3) {
+        toast.error("Please enter a valid 3 or 4 digit CVC.");
         return;
       }
 
       const newCard: CreditCard = {
-        id: Date?.now(),
+        id: Date.now(),
         brand: cardBrand,
-        last4: cardLast4,
+        last4: cleanNum.slice(-4),
         isDefault: cards.length === 0,
         expiry: cardExpiry,
       };
 
-      setCards((prev) => [...prev, newCard]);
-      toast.success(`Linked ${cardBrand} card ending in ${cardLast4} successfully!`);
+      const updated = [...cards, newCard];
+      setCards(updated);
+      localStorage.setItem("luxe_saved_cards", JSON.stringify(updated));
+      toast.success(`Linked ${cardBrand} card ending in ${newCard.last4} successfully!`);
     } else if (modalType === "bkash") {
-      if (!bkashNumber || bkashNumber.length < 11) {
-        toast.error("Please enter a valid bKash mobile number");
+      if (bkashAccounts.length >= 2) {
+        toast.error("Limit exceeded: You can only save up to 2 bKash accounts.");
         return;
       }
 
+      const cleanNum = bkashNumber.replace(/\D/g, "");
+      if (cleanNum.length < 11) {
+        toast.error("Please enter a valid 11-digit bKash mobile number.");
+        return;
+      }
+
+      const formattedBkash = setWishlistMobileNumber(cleanNum);
       const newBkash: BkashAccount = {
         id: Date.now(),
-        number: bkashNumber,
+        number: formattedBkash,
         isVerified: true,
       };
 
-      setWishlistMobileNumber(bkashNumber);
-      setBkashAccounts((prev) => [...prev, newBkash]);
-      toast.success(`Linked bKash account ${bkashNumber} successfully!`);
+      const updated = [...bkashAccounts, newBkash];
+      setBkashAccounts(updated);
+      localStorage.setItem("luxe_saved_bkash", JSON.stringify(updated));
+      toast.success(`Linked bKash account ${formattedBkash} successfully!`);
     }
 
     setIsModalOpen(false);
-    setCardLast4("");
+    setCardNumber("");
     setCardExpiry("");
+    setCardCvc("");
     setBkashNumber("");
   };
 
   const setWishlistMobileNumber = (num: string) => {
-    // formatting helper
     if (num.startsWith("0")) {
       return `+880 ${num.slice(1, 4)}XX XXXX ${num.slice(-2)}`;
     }
@@ -408,40 +488,48 @@ export default function DashboardPaymentsClient() {
 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-zinc-650 dark:text-zinc-400">Card Provider *</label>
-                    <select
-                      value={cardBrand}
-                      onChange={(e) => setCardBrand(e.target.value as "Visa" | "Mastercard")}
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 px-3.5 py-2.5 font-semibold text-zinc-800 dark:text-zinc-200 outline-none cursor-pointer"
-                    >
-                      <option>Visa</option>
-                      <option>Mastercard</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-zinc-650 dark:text-zinc-400">Last 4 Digits *</label>
+                    <label className="text-zinc-650 dark:text-zinc-400">Card Number *</label>
                     <input
                       type="text"
-                      maxLength={4}
                       required
-                      placeholder="e.g. 4242"
-                      value={cardLast4}
-                      onChange={(e) => setCardLast4(e.target.value)}
+                      placeholder="4242 4242 4242 4242"
+                      value={cardNumber}
+                      onChange={(e) => handleCardNumberChange(e.target.value)}
                       className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 px-3.5 py-2.5 font-semibold text-zinc-800 dark:text-zinc-200 outline-none"
                     />
                   </div>
 
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-zinc-650 dark:text-zinc-400">Expiry Date (MM/YYYY) *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="MM/YYYY"
+                        value={cardExpiry}
+                        onChange={(e) => handleExpiryChange(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 px-3.5 py-2.5 font-semibold text-zinc-800 dark:text-zinc-200 outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-zinc-650 dark:text-zinc-400">CVC *</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={4}
+                        placeholder="123"
+                        value={cardCvc}
+                        onChange={(e) => handleCvcChange(e.target.value)}
+                        className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 px-3.5 py-2.5 font-semibold text-zinc-800 dark:text-zinc-200 outline-none"
+                      />
+                    </div>
+                  </div>
+
                   <div className="space-y-1.5">
-                    <label className="text-zinc-650 dark:text-zinc-400">Expiry Date (MM/YYYY) *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. 12/2026"
-                      value={cardExpiry}
-                      onChange={(e) => setCardExpiry(e.target.value)}
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 px-3.5 py-2.5 font-semibold text-zinc-800 dark:text-zinc-200 outline-none"
-                    />
+                    <label className="text-zinc-650 dark:text-zinc-400">Card Provider (Auto-detected)</label>
+                    <div className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900/50 px-3.5 py-2.5 font-bold text-zinc-700 dark:text-zinc-300">
+                      {cardBrand}
+                    </div>
                   </div>
                 </div>
 

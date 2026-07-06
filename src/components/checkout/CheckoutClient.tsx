@@ -13,6 +13,7 @@ import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { clearCart } from "@/lib/features/cart/cartSlice";
 import { useClearDbCartMutation } from "@/lib/features/api/cartApi";
 import { useCreateOrderMutation } from "@/lib/features/api/orderApi";
+import { useCreatePaymentIntentMutation } from "@/lib/features/api/paymentApi";
 
 export default function CheckoutClient() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function CheckoutClient() {
 
   const [createOrder, { isLoading: isCreatingOrder }] = useCreateOrderMutation();
   const [clearDbCart] = useClearDbCartMutation();
+  const [createPaymentIntent] = useCreatePaymentIntentMutation();
 
   // Current active step: 'shipping' | 'delivery' | 'payment' | 'review' | 'confirmation'
   const [activeStep, setActiveStep] = useState<"shipping" | "delivery" | "payment" | "review" | "confirmation">("shipping");
@@ -40,10 +42,139 @@ export default function CheckoutClient() {
   const [deliveryMethod, setDeliveryMethod] = useState<"standard" | "express">("standard");
 
   // Payment Form Selection: 'card' (Stripe) | 'cod' (Cash on Delivery)
-  const [paymentMethod, setPaymentMethod] = useState<"card" | "cod">("card");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvv, setCardCvv] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "bkash" | "cod">("card");
+  const [saveBkashForFuture, setSaveBkashForFuture] = useState(false);
+
+  const [savedCards, setSavedCards] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("luxe_saved_cards");
+      if (saved) return JSON.parse(saved);
+    }
+    return [];
+  });
+
+  const [selectedSavedCardId, setSelectedSavedCardId] = useState<number | null>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("luxe_saved_cards");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const def = parsed.find((c: any) => c.isDefault);
+        if (def) return def.id;
+      }
+    }
+    return null;
+  });
+
+  const [cardNumber, setCardNumber] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("luxe_saved_cards");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const def = parsed.find((c: any) => c.isDefault);
+        if (def) return `4242 4242 4242 ${def.last4}`;
+      }
+    }
+    return "";
+  });
+
+  const [cardExpiry, setCardExpiry] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("luxe_saved_cards");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const def = parsed.find((c: any) => c.isDefault);
+        if (def) return def.expiry;
+      }
+    }
+    return "";
+  });
+
+  const [cardCvv, setCardCvv] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("luxe_saved_cards");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const def = parsed.find((c: any) => c.isDefault);
+        if (def) return "123";
+      }
+    }
+    return "";
+  });
+
+  const [savedBkash, setSavedBkash] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      const savedB = localStorage.getItem("luxe_saved_bkash");
+      if (savedB) return JSON.parse(savedB);
+    }
+    return [];
+  });
+
+  const [selectedBkashId, setSelectedBkashId] = useState<number | null>(() => {
+    if (typeof window !== "undefined") {
+      const savedB = localStorage.getItem("luxe_saved_bkash");
+      if (savedB) {
+        const parsed = JSON.parse(savedB);
+        if (parsed.length > 0) return parsed[0].id;
+      }
+    }
+    return null;
+  });
+
+  const [bkashNumber, setBkashNumber] = useState(() => {
+    if (typeof window !== "undefined") {
+      const savedB = localStorage.getItem("luxe_saved_bkash");
+      if (savedB) {
+        const parsed = JSON.parse(savedB);
+        if (parsed.length > 0) return parsed[0].number;
+      }
+    }
+    return "";
+  });
+
+  const handleSelectSavedCard = (card: any) => {
+    setSelectedSavedCardId(card.id);
+    setCardNumber(`4242 4242 4242 ${card.last4}`);
+    setCardExpiry(card.expiry);
+    setCardCvv("123");
+  };
+
+  const handleSelectBkash = (account: any) => {
+    setSelectedBkashId(account.id);
+    setBkashNumber(account.number);
+  };
+
+  const handleCardNumberChange = (val: string) => {
+    const clean = val.replace(/\D/g, "");
+    const limited = clean.slice(0, 16);
+    const parts = [];
+    for (let i = 0; i < limited.length; i += 4) {
+      parts.push(limited.slice(i, i + 4));
+    }
+    setCardNumber(parts.join(" "));
+  };
+
+  const handleExpiryChange = (val: string) => {
+    const clean = val.replace(/\D/g, "");
+    let formatted = "";
+    if (clean.length > 0) {
+      const month = clean.slice(0, 2);
+      formatted += month;
+      if (clean.length > 2) {
+        const year = clean.slice(2, 6);
+        formatted += "/" + year;
+      } else if (month.length === 2 && !val.endsWith("/")) {
+        formatted += "/";
+      }
+    }
+    setCardExpiry(formatted);
+  };
+
+  const handleCvcChange = (val: string) => {
+    const clean = val.replace(/\D/g, "").slice(0, 4);
+    setCardCvv(clean);
+  };
+
+  const [saveCardForFuture, setSaveCardForFuture] = useState(false);
 
 
   // Accordion state
@@ -160,7 +291,7 @@ export default function CheckoutClient() {
         customerName: fullName,
         customerEmail: user?.email || "guest@luxe.com",
         total: getGrandTotal(),
-        paymentStatus: paymentMethod === "card" ? "Paid" : "Pending",
+        paymentStatus: paymentMethod === "card" || paymentMethod === "bkash" ? "Paid" : "Pending",
         fulfillmentStatus: "Processing",
       };
       const orderResult = await createOrder(orderPayload).unwrap();
@@ -176,6 +307,37 @@ export default function CheckoutClient() {
           }
         }
         sessionStorage.removeItem("appliedCoupon");
+        
+        if (paymentMethod === "card" && saveCardForFuture && !selectedSavedCardId) {
+          const cleanNum = cardNumber.replace(/\s/g, "");
+          const brand = cleanNum.startsWith("4") ? "Visa" : "Mastercard";
+          const newCard = {
+            id: Date.now(),
+            brand,
+            last4: cleanNum.slice(-4),
+            isDefault: savedCards.length === 0,
+            expiry: cardExpiry,
+          };
+          const updatedCards = [...savedCards, newCard];
+          localStorage.setItem("luxe_saved_cards", JSON.stringify(updatedCards));
+          setSavedCards(updatedCards);
+          setSelectedSavedCardId(newCard.id);
+        }
+
+        if (paymentMethod === "bkash" && saveBkashForFuture && !selectedBkashId) {
+          const cleanNum = bkashNumber.replace(/\D/g, "");
+          const formatted = cleanNum.startsWith("0") ? `+880 ${cleanNum.slice(1, 4)}XX XXXX ${cleanNum.slice(-2)}` : cleanNum;
+          const newBkash = {
+            id: Date.now(),
+            number: formatted,
+            isVerified: true,
+          };
+          const updatedBkash = [...savedBkash, newBkash];
+          localStorage.setItem("luxe_saved_bkash", JSON.stringify(updatedBkash));
+          setSavedBkash(updatedBkash);
+          setSelectedBkashId(newBkash.id);
+        }
+
         toast.success("Order Placed Successfully!");
         setActiveStep("confirmation");
         return true;
@@ -199,6 +361,10 @@ export default function CheckoutClient() {
     } else if (activeStep === "payment") {
       if (paymentMethod === "card" && (!cardNumber || !cardExpiry || !cardCvv)) {
         toast.error("Please fill in payment card details!");
+        return;
+      }
+      if (paymentMethod === "bkash" && !bkashNumber) {
+        toast.error("Please fill in bKash mobile details!");
         return;
       }
       setActiveStep("review");
@@ -815,10 +981,85 @@ export default function CheckoutClient() {
                           className="h-4.5 w-4.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
                         />
                       </button>
-
                       {/* Card Input Details */}
                       {paymentMethod === "card" && (
                         <div className="px-5 pb-5 border-t border-zinc-100 dark:border-zinc-900 pt-5 space-y-4 animate-fade-in">
+                          
+                          {/* Saved Cards List Option */}
+                          {savedCards.length > 0 && (
+                            <div className="space-y-2 mb-2">
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1">
+                                Saved Payment Cards
+                              </label>
+                              <div className="grid grid-cols-1 gap-2">
+                                {savedCards.map((card) => (
+                                  <button
+                                    key={card.id}
+                                    type="button"
+                                    onClick={() => handleSelectSavedCard(card)}
+                                    className={`flex items-center justify-between p-3.5 rounded-2xl border text-xs font-semibold cursor-pointer text-left transition-all ${
+                                      selectedSavedCardId === card.id
+                                        ? "border-blue-655 bg-blue-50/5 dark:bg-blue-955/5"
+                                        : "border-zinc-200 dark:border-zinc-805 bg-white hover:bg-zinc-50 dark:bg-zinc-950/20"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-6 w-10 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded flex items-center justify-center text-[9px] font-black italic text-zinc-550">
+                                        {card.brand === "Visa" ? "VISA" : "MC"}
+                                      </div>
+                                      <div>
+                                        <p className="text-zinc-850 dark:text-white font-black">
+                                          {card.brand} ending in {card.last4}
+                                        </p>
+                                        <span className="text-[10px] text-zinc-455 block">Expires {card.expiry}</span>
+                                      </div>
+                                    </div>
+                                    <div className={`h-4.5 w-4.5 rounded-full border flex items-center justify-center ${
+                                      selectedSavedCardId === card.id
+                                        ? "border-blue-650 bg-blue-600 text-white"
+                                        : "border-zinc-300 dark:border-zinc-700"
+                                    }`}>
+                                      {selectedSavedCardId === card.id && (
+                                        <div className="h-2 w-2 rounded-full bg-white" />
+                                      )}
+                                    </div>
+                                  </button>
+                                ))}
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedSavedCardId(null);
+                                    setCardNumber("");
+                                    setCardExpiry("");
+                                    setCardCvv("");
+                                  }}
+                                  className={`flex items-center justify-between p-3.5 rounded-2xl border text-xs font-semibold cursor-pointer text-left transition-all ${
+                                    selectedSavedCardId === null
+                                      ? "border-blue-650 bg-blue-50/5 dark:bg-blue-955/5"
+                                      : "border-zinc-200 dark:border-zinc-805 bg-white hover:bg-zinc-50 dark:bg-zinc-950/20"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="h-6 w-10 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-805 rounded flex items-center justify-center text-xs font-black text-zinc-555">
+                                      +
+                                    </div>
+                                    <p className="text-zinc-855 dark:text-white font-black">Use another card</p>
+                                  </div>
+                                  <div className={`h-4.5 w-4.5 rounded-full border flex items-center justify-center ${
+                                    selectedSavedCardId === null
+                                      ? "border-blue-650 bg-blue-600 text-white"
+                                      : "border-zinc-300 dark:border-zinc-700"
+                                  }`}>
+                                    {selectedSavedCardId === null && (
+                                      <div className="h-2 w-2 rounded-full bg-white" />
+                                    )}
+                                  </div>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           <div>
                             <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">
                               Card Number
@@ -834,8 +1075,9 @@ export default function CheckoutClient() {
                                 required
                                 placeholder="**** **** **** 4242"
                                 value={cardNumber}
-                                onChange={(e) => setCardNumber(e.target.value)}
-                                className="w-full pl-10 pr-16 py-2.5 rounded-xl border border-zinc-250 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white dark:focus:bg-zinc-955 transition-all"
+                                onChange={(e) => handleCardNumberChange(e.target.value)}
+                                readOnly={selectedSavedCardId !== null}
+                                className="w-full pl-10 pr-16 py-2.5 rounded-xl border border-zinc-255 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white dark:focus:bg-zinc-955 transition-all read-only:opacity-80"
                               />
                               <div className="absolute inset-y-0 right-3.5 flex items-center gap-1.5">
                                 <span className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-1.5 py-0.5 rounded text-[8px] font-black uppercase text-zinc-400">VI</span>
@@ -860,8 +1102,9 @@ export default function CheckoutClient() {
                                   required
                                   placeholder="MM/YY"
                                   value={cardExpiry}
-                                  onChange={(e) => setCardExpiry(e.target.value)}
-                                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-zinc-250 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white dark:focus:bg-zinc-955 transition-all"
+                                  onChange={(e) => handleExpiryChange(e.target.value)}
+                                  readOnly={selectedSavedCardId !== null}
+                                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-zinc-250 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white dark:focus:bg-zinc-955 transition-all read-only:opacity-80"
                                 />
                               </div>
                             </div>
@@ -881,8 +1124,9 @@ export default function CheckoutClient() {
                                   required
                                   placeholder="CVC"
                                   value={cardCvv}
-                                  onChange={(e) => setCardCvv(e.target.value)}
-                                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-zinc-250 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white dark:focus:bg-zinc-955 transition-all"
+                                  onChange={(e) => handleCvcChange(e.target.value)}
+                                  readOnly={selectedSavedCardId !== null}
+                                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-zinc-250 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white dark:focus:bg-zinc-955 transition-all read-only:opacity-80"
                                 />
                               </div>
                             </div>
@@ -892,6 +1136,8 @@ export default function CheckoutClient() {
                             <label className="flex items-center gap-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer select-none">
                               <input
                                 type="checkbox"
+                                checked={saveCardForFuture}
+                                onChange={(e) => setSaveCardForFuture(e.target.checked)}
                                 className="h-4.5 w-4.5 rounded border-zinc-305 text-blue-600 focus:ring-blue-500 cursor-pointer dark:border-zinc-800 dark:bg-zinc-950"
                               />
                               <span>Save this card for future purchases</span>
@@ -926,7 +1172,137 @@ export default function CheckoutClient() {
                       )}
                     </div>
 
-                    {/* Option 2: Cash on Delivery */}
+                    {/* Option 2: bKash (Mobile Banking) */}
+                    <div className={`border rounded-3xl overflow-hidden transition-all ${
+                      paymentMethod === "bkash"
+                        ? "border-blue-600 bg-white dark:bg-zinc-955"
+                        : "border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-805 dark:bg-zinc-955 dark:hover:bg-zinc-900"
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod("bkash")}
+                        className="w-full flex items-center justify-between p-5 cursor-pointer text-left focus:outline-none"
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="h-5.5 w-10 bg-pink-650 rounded flex items-center justify-center text-[7px] font-black text-white shrink-0">bKash</div>
+                          <span className="text-xs font-black text-zinc-955 dark:text-white">Mobile Banking (bKash)</span>
+                        </div>
+                        <input
+                          type="radio"
+                          name="paymentOption"
+                          checked={paymentMethod === "bkash"}
+                          onChange={() => setPaymentMethod("bkash")}
+                          className="h-4.5 w-4.5 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </button>
+
+                      {paymentMethod === "bkash" && (
+                        <div className="px-5 pb-5 border-t border-zinc-100 dark:border-zinc-900 pt-5 space-y-4 animate-fade-in">
+                          {savedBkash.length > 0 && (
+                            <div className="space-y-2 mb-2">
+                              <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1">
+                                Saved bKash Accounts
+                              </label>
+                              <div className="grid grid-cols-1 gap-2">
+                                {savedBkash.map((acc) => (
+                                  <button
+                                    key={acc.id}
+                                    type="button"
+                                    onClick={() => handleSelectBkash(acc)}
+                                    className={`flex items-center justify-between p-3.5 rounded-2xl border text-xs font-semibold cursor-pointer text-left transition-all ${
+                                      selectedBkashId === acc.id
+                                        ? "border-blue-655 bg-blue-50/5 dark:bg-blue-955/5"
+                                        : "border-zinc-200 dark:border-zinc-805 bg-white hover:bg-zinc-50 dark:bg-zinc-950/20"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className="h-6 w-10 bg-pink-50 dark:bg-pink-950 border border-pink-100 dark:border-pink-900 rounded flex items-center justify-center text-[8px] font-black text-pink-600">
+                                        BKASH
+                                      </div>
+                                      <div>
+                                        <p className="text-zinc-850 dark:text-white font-black">
+                                          {acc.number}
+                                        </p>
+                                        <span className="text-[10px] text-zinc-450 block">Verified Account</span>
+                                      </div>
+                                    </div>
+                                    <div className={`h-4.5 w-4.5 rounded-full border flex items-center justify-center ${
+                                      selectedBkashId === acc.id
+                                        ? "border-blue-650 bg-blue-600 text-white"
+                                        : "border-zinc-300 dark:border-zinc-700"
+                                    }`}>
+                                      {selectedBkashId === acc.id && (
+                                        <div className="h-2 w-2 rounded-full bg-white" />
+                                      )}
+                                    </div>
+                                  </button>
+                                ))}
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedBkashId(null);
+                                    setBkashNumber("");
+                                  }}
+                                  className={`flex items-center justify-between p-3.5 rounded-2xl border text-xs font-semibold cursor-pointer text-left transition-all ${
+                                    selectedBkashId === null
+                                      ? "border-blue-650 bg-blue-50/5 dark:bg-blue-955/5"
+                                      : "border-zinc-200 dark:border-zinc-805 bg-white hover:bg-zinc-50 dark:bg-zinc-950/20"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="h-6 w-10 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-805 rounded flex items-center justify-center text-xs font-black text-zinc-555">
+                                      +
+                                    </div>
+                                    <p className="text-zinc-855 dark:text-white font-black">Use another bKash number</p>
+                                  </div>
+                                  <div className={`h-4.5 w-4.5 rounded-full border flex items-center justify-center ${
+                                    selectedBkashId === null
+                                      ? "border-blue-650 bg-blue-600 text-white"
+                                      : "border-zinc-300 dark:border-zinc-700"
+                                  }`}>
+                                    {selectedBkashId === null && (
+                                      <div className="h-2 w-2 rounded-full bg-white" />
+                                    )}
+                                  </div>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-450 mb-1.5">
+                              bKash Mobile Number
+                            </label>
+                            <input
+                              type="tel"
+                              required
+                              placeholder="e.g. 017XXXXXXXX"
+                              value={bkashNumber}
+                              onChange={(e) => setBkashNumber(e.target.value)}
+                              readOnly={selectedBkashId !== null}
+                              className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-250 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white dark:focus:bg-zinc-955 transition-all read-only:opacity-80"
+                            />
+                          </div>
+
+                          <div className="pt-1.5">
+                            <label className="flex items-center gap-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={saveBkashForFuture}
+                                onChange={(e) => setSaveBkashForFuture(e.target.checked)}
+                                disabled={selectedBkashId !== null}
+                                className="h-4.5 w-4.5 rounded border-zinc-305 text-blue-600 focus:ring-blue-500 cursor-pointer dark:border-zinc-800 dark:bg-zinc-950 disabled:opacity-50"
+                              />
+                              <span>Save this bKash account for future purchases</span>
+                            </label>
+                          </div>
+
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Option 3: Cash on Delivery */}
                     <div className={`border rounded-3xl overflow-hidden transition-all ${
                       paymentMethod === "cod"
                         ? "border-blue-600 bg-white dark:bg-zinc-955"
@@ -1036,8 +1412,19 @@ export default function CheckoutClient() {
                       <div className="text-xs text-zinc-650 dark:text-zinc-450 leading-relaxed font-bold space-y-2">
                         {paymentMethod === "card" ? (
                           <div className="flex items-center gap-2">
-                            <span className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-0.5 rounded text-[9px] font-black uppercase text-zinc-500 tracking-wider">Visa</span>
-                            <span className="text-zinc-900 dark:text-white font-extrabold">Visa ending in 4242</span>
+                            <span className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-0.5 rounded text-[9px] font-black uppercase text-zinc-500 tracking-wider">
+                              {cardNumber.replace(/\s/g, "").startsWith("5") ? "Mastercard" : "Visa"}
+                            </span>
+                            <span className="text-zinc-900 dark:text-white font-extrabold">
+                              Card ending in {cardNumber ? cardNumber.slice(-4) : "4242"}
+                            </span>
+                          </div>
+                        ) : paymentMethod === "bkash" ? (
+                          <div className="flex items-center gap-2">
+                            <span className="bg-pink-50 dark:bg-pink-950 border border-pink-100 dark:border-pink-900 px-2 py-0.5 rounded text-[9px] font-black uppercase text-pink-600 tracking-wider">bKash</span>
+                            <span className="text-zinc-900 dark:text-white font-extrabold">
+                              bKash: {bkashNumber || "Not Linked"}
+                            </span>
                           </div>
                         ) : (
                           <p className="text-zinc-900 dark:text-white font-extrabold">Cash on Delivery (COD)</p>
@@ -1407,15 +1794,38 @@ export default function CheckoutClient() {
                     type="button"
                     onClick={async () => {
                       setStripeProcessing(true);
-                      await new Promise((resolve) => setTimeout(resolve, 2000));
-                      setStripeSuccess(true);
-                      await new Promise((resolve) => setTimeout(resolve, 800));
-                      const ok = await submitOrder();
-                      if (ok) {
-                        setShowStripeModal(false);
+                      try {
+                        const totalAmount = getGrandTotal();
+                        const intentResult = await createPaymentIntent({
+                          amount: totalAmount,
+                          email: user?.email || "guest@luxe.com",
+                          name: fullName,
+                          phone: phone,
+                          address: {
+                            line1: addressLine1,
+                            line2: addressLine2 || "",
+                            city: city,
+                            state: state,
+                            postal_code: zipCode,
+                            country: "BD",
+                          },
+                        }).unwrap();
+                        if (intentResult.success && intentResult.data?.clientSecret) {
+                          await new Promise((resolve) => setTimeout(resolve, 1500));
+                          setStripeSuccess(true);
+                          await new Promise((resolve) => setTimeout(resolve, 800));
+                          const ok = await submitOrder();
+                          if (ok) {
+                            setShowStripeModal(false);
+                          }
+                        }
+                      } catch (err: any) {
+                        toast.error(err?.data?.message || "Stripe Payment Intent creation failed.");
+                        console.error("Stripe Intent generation error:", err);
+                      } finally {
+                        setStripeProcessing(false);
+                        setStripeSuccess(false);
                       }
-                      setStripeProcessing(false);
-                      setStripeSuccess(false);
                     }}
                     className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-3.5 text-xs font-black shadow-md shadow-blue-500/10 transition-all cursor-pointer"
                   >
