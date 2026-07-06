@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
@@ -24,28 +26,27 @@ interface CollectionsClientProps {
   products: Product[];
 }
 
-const RECENTLY_VIEWED = [
-  {
-    id: 101,
-    name: "Classic Bifold",
-    brand: "AETHEL",
-    price: 220,
-    image: "https://images.unsplash.com/photo-1627124718515-4d3f31777d13?q=80&w=600&auto=format&fit=crop",
-  },
-  {
-    id: 102,
-    name: "Riviera Shades",
-    brand: "SOLARA",
-    price: 350,
-    image: "https://images.unsplash.com/photo-1511499767150-a48a237f0083?q=80&w=600&auto=format&fit=crop",
-  },
-];
-
 const ITEMS_PER_PAGE = 6;
 
 export default function CollectionsClient({ products }: CollectionsClientProps) {
+  const [dbProducts, setDbProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [recentlyViewed, setRecentlyViewed] = useState<any[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const storedStr = localStorage.getItem("recentlyViewed");
+        if (storedStr) {
+          return JSON.parse(storedStr);
+        }
+      } catch (err) {
+        console.error("Error loading recently viewed list from localStorage:", err);
+      }
+    }
+    return [];
+  });
+
   // Navigation & UI States
-  const [selectedCategories, setSelectedCategories] = useState<string[]>(["Watches"]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<number>(10000);
   const [selectedRating, setSelectedRating] = useState<number | null>(4);
   const [inStockOnly, setInStockOnly] = useState<boolean>(false);
@@ -58,8 +59,46 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
   const [isSortDrawerOpen, setIsSortDrawerOpen] = useState<boolean>(false);
 
   // User interactions
-  const [favorites, setFavorites] = useState<number[]>([]);
+  const [favorites, setFavorites] = useState<any[]>([]);
   const [activeMobileTab, setActiveMobileTab] = useState<string>("collections");
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api/v1";
+
+  // Fetch db products
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setIsLoading(true);
+        const res = await fetch(`${API_URL}/products`);
+        const data = await res.json();
+        if (data.success) {
+          const mapped: Product[] = data.data.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            brand: p.brand || "LUXE",
+            category: p.category,
+            price: p.price,
+            originalPrice: p.originalPrice || undefined,
+            rating: p.rating || 5.0,
+            ratingCount: p.ratingCount || 15,
+            isNew: p.status === "Published",
+            tag: p.status === "Published" ? "NEW" : "",
+            image: p.image,
+            inStock: p.inventoryType === "untracked" || p.inventoryCount > 0,
+          }));
+          setDbProducts(mapped);
+        }
+      } catch (err) {
+        console.error("Error loading products from server:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProducts();
+  }, [API_URL]);
+
+
+
 
   // Scroll to top of list on page change
   useEffect(() => {
@@ -77,7 +116,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
   };
 
   // Add to Favorites Toggle
-  const toggleFavorite = (productId: number) => {
+  const toggleFavorite = (productId: any) => {
     setFavorites((prev) => {
       const isFav = prev.includes(productId);
       if (isFav) {
@@ -95,9 +134,23 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
     toast.success(`Added ${productName} to cart!`);
   };
 
+  const activeProducts = dbProducts.length > 0 ? dbProducts : products;
+
+  // Dynamic categories list
+  const categoryOptions = useMemo(() => {
+    const cats = new Set<string>(["Watches", "Jewelry", "Accessories"]);
+    activeProducts.forEach((p) => {
+      if (p.category) {
+        const formatted = p.category.charAt(0).toUpperCase() + p.category.slice(1);
+        cats.add(formatted);
+      }
+    });
+    return Array.from(cats);
+  }, [activeProducts]);
+
   // Filtering Logic
   const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
+    return activeProducts.filter((product) => {
       // Category filter
       if (
         selectedCategories.length > 0 &&
@@ -119,7 +172,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
       }
       return true;
     });
-  }, [products, selectedCategories, priceRange, selectedRating, inStockOnly]);
+  }, [activeProducts, selectedCategories, priceRange, selectedRating, inStockOnly]);
 
   // Sorting Logic
   const sortedProducts = useMemo(() => {
@@ -133,7 +186,6 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
         return list.sort((a, b) => b.rating - a.rating);
       case "featured":
       default:
-        // Keep initial order matching the screenshot layout
         return list;
     }
   }, [filteredProducts, sortBy]);
@@ -197,7 +249,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
             <div>
               <h3 className="text-sm font-bold tracking-wider text-zinc-900 dark:text-white uppercase mb-4">Category</h3>
               <div className="space-y-3">
-                {["Watches", "Jewelry", "Accessories"].map((category) => (
+                {categoryOptions.map((category) => (
                   <label key={category} className="flex items-center group cursor-pointer">
                     <input
                       type="checkbox"
@@ -358,7 +410,21 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
           </div>
 
           {/* PRODUCT LAYOUT GRID/LIST */}
-          {paginatedProducts.length === 0 ? (
+          {isLoading ? (
+            // Shimmer Loading Skeletons
+            <div className={viewMode === "grid" ? "grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 sm:gap-x-6 gap-y-8 sm:gap-y-10" : "space-y-4"}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="animate-pulse flex flex-col bg-white dark:bg-zinc-900 border border-zinc-150 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs">
+                  <div className="aspect-square w-full bg-zinc-200 dark:bg-zinc-850" />
+                  <div className="flex-1 p-3.5 sm:p-5 space-y-3">
+                    <div className="h-2 w-1/4 bg-zinc-200 dark:bg-zinc-850 rounded" />
+                    <div className="h-3.5 w-3/4 bg-zinc-200 dark:bg-zinc-850 rounded" />
+                    <div className="h-3 w-1/2 bg-zinc-200 dark:bg-zinc-850 rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : paginatedProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 shadow-sm px-4">
               <svg className="h-12 w-12 text-zinc-350 mb-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25 2.25m-2.25-2.25l-2.25 2.25m2.25-2.25l2.25-2.25M3.75 7.5L5.621 3.757A1.5 1.5 0 016.964 3h10.071a1.5 1.5 0 011.343.803L20.25 7.5m-16.5 0H20.25" />
@@ -611,32 +677,32 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
           )}
 
         </section>
-      </div>
-
-      {/* RECENTLY VIEWED SECTION */}
-      <section className="mt-16 border-t border-zinc-200 dark:border-zinc-800 pt-12">
-        <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white mb-6">Recently Viewed</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
-          {RECENTLY_VIEWED.map((product) => (
-            <Link key={product.id} href={`/collections/${product.id === 101 ? 7 : 15}`} className="group relative flex flex-col cursor-pointer bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-900 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
-              <div className="aspect-square w-full bg-zinc-100 dark:bg-zinc-950 overflow-hidden">
-                <Image
-                  src={product.image}
-                  alt={product.name}
-                  width={200}
-                  height={200}
-                  className="object-cover w-full h-full transition-transform duration-500 ease-out group-hover:scale-103"
-                />
-              </div>
-              <div className="p-3">
-                <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">{product.brand}</span>
-                <h3 className="text-xs font-bold text-zinc-900 dark:text-white truncate mt-0.5">{product.name}</h3>
-                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-300 block mt-1.5">${product.price}</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
+      </div>      {/* RECENTLY VIEWED SECTION */}
+      {recentlyViewed.length > 0 && (
+        <section className="mt-16 border-t border-zinc-200 dark:border-zinc-800 pt-12">
+          <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-white mb-6">Recently Viewed</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
+            {recentlyViewed.map((product) => (
+              <Link key={product.id} href={`/collections/${product.id}`} className="group relative flex flex-col cursor-pointer bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-900 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+                <div className="aspect-square w-full bg-zinc-100 dark:bg-zinc-950 overflow-hidden">
+                  <Image
+                    src={product.image}
+                    alt={product.name}
+                    width={200}
+                    height={200}
+                    className="object-cover w-full h-full transition-transform duration-500 ease-out group-hover:scale-103"
+                  />
+                </div>
+                <div className="p-3">
+                  <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase">{product.brand}</span>
+                  <h3 className="text-xs font-bold text-zinc-900 dark:text-white truncate mt-0.5">{product.name}</h3>
+                  <span className="text-xs font-bold text-zinc-800 dark:text-zinc-300 block mt-1.5">${product.price}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ========================================================================= */}
       {/* MOBILE INTERACTIVE FILTER DRAWER (SLIDE-UP OVERLAY) */}
@@ -664,7 +730,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
             <div className="mb-6">
               <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Categories</h4>
               <div className="flex flex-wrap gap-2">
-                {["Watches", "Jewelry", "Accessories"].map((category) => {
+                {categoryOptions.map((category) => {
                   const isSelected = selectedCategories.includes(category);
                   return (
                     <button

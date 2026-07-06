@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect } from "react";
@@ -51,10 +52,38 @@ export default function CollectionDetailsClient({
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState("shop");
 
-  // Scroll to top on load
+  // Scroll to top and track recently viewed product on load
   useEffect(() => {
     window.scrollTo(0, 0);
-  }, [product.id]);
+    if (product) {
+      try {
+        const storedStr = localStorage.getItem("recentlyViewed");
+        let list: any[] = [];
+        if (storedStr) {
+          list = JSON.parse(storedStr);
+        }
+        
+        // Remove product if already present to bring it to the front
+        list = list.filter((item: any) => String(item.id) !== String(product.id));
+        
+        // Add to front of the list
+        list.unshift({
+          id: product.id,
+          name: product.name,
+          brand: product.brand,
+          price: product.price,
+          image: product.image
+        });
+        
+        // Keep only top 4 recently viewed items
+        list = list.slice(0, 4);
+        
+        localStorage.setItem("recentlyViewed", JSON.stringify(list));
+      } catch (err) {
+        console.error("Error storing recently viewed product:", err);
+      }
+    }
+  }, [product.id, product]);
 
   const handleAddToCart = () => {
     toast.success(`Added ${product.name} to cart!`);
