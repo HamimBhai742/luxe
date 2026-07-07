@@ -31,6 +31,10 @@ export const orderApi = baseApi.injectEndpoints({
         total: number;
         paymentStatus?: string;
         fulfillmentStatus?: string;
+        paymentMethod?: string;
+        deliveryMethod?: string;
+        estimatedDelivery?: string;
+        items?: Record<string, unknown>[];
       }
     >({
       query: (body) => ({

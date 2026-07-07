@@ -293,6 +293,17 @@ export default function CheckoutClient() {
         total: getGrandTotal(),
         paymentStatus: paymentMethod === "card" || paymentMethod === "bkash" ? "Paid" : "Pending",
         fulfillmentStatus: "Processing",
+        paymentMethod: paymentMethod,
+        deliveryMethod: deliveryMethod,
+        estimatedDelivery: deliveryMethod === "express" ? "1-2 Days (Express)" : getEstimatedDeliveryRange(state),
+        items: cartItems.map((item) => ({
+          id: item.id || item?.productId,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          specsText: item.specsText || null,
+          image: item.image,
+        })),
       };
       const orderResult = await createOrder(orderPayload).unwrap();
       if (orderResult.success && orderResult.data) {
@@ -539,7 +550,23 @@ export default function CheckoutClient() {
               {/* Download Invoice Button Card */}
               <button
                 type="button"
-                onClick={() => toast.success("Invoice PDF download started successfully!")}
+                onClick={() => {
+                  if (createdOrder?.id) {
+                    const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:5001/api/v1";
+                    const downloadUrl = `${baseUrl}/orders/${createdOrder.id}/invoice/download`;
+                    
+                    toast.success("Downloading invoice...");
+                    
+                    const link = document.createElement("a");
+                    link.href = downloadUrl;
+                    link.setAttribute("download", `invoice-${createdOrder.orderId || "order"}.pdf`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  } else {
+                    toast.error("Order details not found. Cannot download invoice.");
+                  }
+                }}
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl py-5 text-xs font-black shadow-md shadow-blue-500/10 transition-all cursor-pointer select-none"
               >
                 <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
