@@ -37,6 +37,7 @@ export default function CheckoutClient() {
   const [state, setState] = useState("");
   const [zipCode, setZipCode] = useState("");
   const [addToAddressBook, setAddToAddressBook] = useState(false);
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
 
   // Delivery Method Selection
   const [deliveryMethod, setDeliveryMethod] = useState<"standard" | "express">("standard");
@@ -210,7 +211,7 @@ export default function CheckoutClient() {
       if (!token) return;
 
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/v1";
+        const baseUrl = process.env.NEXT_PUBLIC_URL || "http://localhost:5001/api/v1";
         const res = await fetch(`${baseUrl}/addresses`, {
           headers: {
             "Authorization": `Bearer ${token}`,
@@ -218,6 +219,7 @@ export default function CheckoutClient() {
         });
         const data = await res.json();
         if (data.success && Array.isArray(data.data)) {
+          setSavedAddresses(data.data);
           const defaultAddr = data.data.find((addr: any) => addr.isDefault);
           if (defaultAddr) {
             setFullName(defaultAddr.fullName || "");
@@ -227,6 +229,16 @@ export default function CheckoutClient() {
             setCity(defaultAddr.city || "");
             setState(defaultAddr.state || "");
             setZipCode(defaultAddr.zipCode || "");
+          } else if (data.data.length > 0) {
+            // Select first address if none is default
+            const firstAddr = data.data[0];
+            setFullName(firstAddr.fullName || "");
+            setPhone(firstAddr.phone || "");
+            setAddressLine1(firstAddr.addressLine1 || "");
+            setAddressLine2(firstAddr.addressLine2 || "");
+            setCity(firstAddr.city || "");
+            setState(firstAddr.state || "");
+            setZipCode(firstAddr.zipCode || "");
           }
         }
       } catch (err) {
@@ -826,6 +838,49 @@ export default function CheckoutClient() {
                       Please enter the details where you'd like your order delivered.
                     </p>
                   </div>
+
+                  {savedAddresses.length > 0 && (
+                    <div className="bg-zinc-50/50 dark:bg-zinc-900/40 border border-zinc-150 dark:border-zinc-800/80 rounded-2xl p-4 space-y-2">
+                      <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-450 dark:text-zinc-400">
+                        Choose from Saved Addresses
+                      </label>
+                      <div className="relative">
+                        <select
+                          onChange={(e) => {
+                            const selected = savedAddresses.find((addr) => addr.id === e.target.value);
+                            if (selected) {
+                              setFullName(selected.fullName || "");
+                              setPhone(selected.phone || "");
+                              setAddressLine1(selected.addressLine1 || "");
+                              setAddressLine2(selected.addressLine2 || "");
+                              setCity(selected.city || "");
+                              setState(selected.state || "");
+                              setZipCode(selected.zipCode || "");
+                            } else {
+                              setFullName("");
+                              setPhone("");
+                              setAddressLine1("");
+                              setAddressLine2("");
+                              setCity("");
+                              setState("");
+                              setZipCode("");
+                            }
+                          }}
+                          className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3.5 py-2.5 font-bold text-xs text-zinc-700 dark:text-zinc-300 appearance-none focus:outline-none cursor-pointer pr-10"
+                        >
+                          {savedAddresses.map((addr) => (
+                            <option key={addr.id} value={addr.id}>
+                              {addr.fullName} — {addr.addressLine1}, {addr.city} ({addr.addressType}{addr.isDefault ? " - Default" : ""})
+                            </option>
+                          ))}
+                          <option value="">+ Enter a new address</option>
+                        </select>
+                        <svg className="absolute right-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-4 pt-2">
                     <div className="grid grid-cols-2 gap-4">
