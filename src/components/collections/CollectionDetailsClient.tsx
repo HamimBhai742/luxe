@@ -11,11 +11,13 @@ import { addToCart } from "@/lib/features/cart/cartSlice";
 import { useRouter } from "next/navigation";
 import { useGetWishlistQuery, useAddToWishlistMutation, useRemoveFromWishlistMutation } from "@/lib/features/api/wishlistApi";
 import { useSyncDbCartMutation } from "@/lib/features/api/cartApi";
+import { useCheckReviewEligibilityQuery, useSubmitReviewMutation } from "@/lib/features/api/reviewApi";
 
 interface ProductReview {
   author: string;
   rating: number;
   content: string;
+  createdAt?: string;
 }
 
 interface ProductSpecs {
@@ -66,6 +68,67 @@ export default function CollectionDetailsClient({
   const [selectedColor, setSelectedColor] = useState(product.colors[0] || "");
   const [localIsFavorite, setLocalIsFavorite] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState("shop");
+
+  const [reviewsList, setReviewsList] = useState<ProductReview[]>(product.reviews);
+  const [currentRating, setCurrentRating] = useState<number>(product.rating);
+  const [currentRatingCount, setCurrentRatingCount] = useState<number>(product.ratingCount);
+
+  const { data: eligibilityData, refetch: refetchEligibility } = useCheckReviewEligibilityQuery(
+    String(product.id),
+    { skip: !isAuthenticated }
+  );
+  const isEligible = eligibilityData?.success && eligibilityData.eligible;
+
+  const [submitReview, { isLoading: isSubmitting }] = useSubmitReviewMutation();
+
+  const [ratingInput, setRatingInput] = useState(5);
+  const [commentInput, setCommentInput] = useState("");
+  const [hoveredRating, setHoveredRating] = useState<number | null>(null);
+  const { user } = useAppSelector((state) => state.auth);
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentInput.trim()) {
+      toast.error("Please enter a comment.");
+      return;
+    }
+
+    try {
+      const res = await submitReview({
+        productId: String(product.id),
+        rating: ratingInput,
+        comment: commentInput.trim(),
+      }).unwrap();
+
+      if (res.success) {
+        toast.success("Review submitted successfully!");
+        
+        const newReviewObj: ProductReview = {
+          author: user?.name || "You",
+          rating: ratingInput,
+          content: commentInput.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        const updatedReviews = [newReviewObj, ...reviewsList];
+        setReviewsList(updatedReviews);
+        
+        const newCount = reviewsList.length + 1;
+        const newAvgRating = parseFloat(
+          ((reviewsList.reduce((sum, r) => sum + r.rating, 0) + ratingInput) / newCount).toFixed(1)
+        );
+        setCurrentRating(newAvgRating);
+        setCurrentRatingCount(newCount);
+        
+        setCommentInput("");
+        setRatingInput(5);
+        refetchEligibility();
+        router.refresh();
+      }
+    } catch (err: any) {
+      console.error("Failed to submit review:", err);
+      toast.error(err?.data?.message || "Failed to submit review. Please try again.");
+    }
+  };
 
   const wishlist = wishlistData?.success && wishlistData.data ? wishlistData.data : [];
   const isProductInWishlist = isAuthenticated 
@@ -302,7 +365,7 @@ export default function CollectionDetailsClient({
                   {Array.from({ length: 5 }).map((_, i) => (
                     <svg
                       key={i}
-                      className={`h-4.5 w-4.5 ${i < Math.floor(product.rating) ? "fill-amber-400" : "fill-zinc-200 dark:fill-zinc-800"}`}
+                      className={`h-4.5 w-4.5 ${i < Math.floor(currentRating) ? "fill-amber-400" : "fill-zinc-200 dark:fill-zinc-800"}`}
                       viewBox="0 0 20 20"
                     >
                       <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
@@ -310,7 +373,7 @@ export default function CollectionDetailsClient({
                   ))}
                 </div>
                 <span className="text-xs font-semibold text-zinc-400 dark:text-zinc-555">
-                  ({product.ratingCount} reviews)
+                  ({currentRatingCount} reviews)
                 </span>
               </div>
             </div>
@@ -429,22 +492,106 @@ export default function CollectionDetailsClient({
               </div>
             )}
 
+            {/* Write a Review Block (If Eligible) */}
+            {isEligible && (
+              <form onSubmit={handleReviewSubmit} className="mb-8 p-6 rounded-2xl border border-zinc-100 bg-zinc-50/30 dark:border-zinc-800/80 dark:bg-zinc-900/20 shadow-xs backdrop-blur-xs">
+                <h3 className="text-sm font-extrabold text-zinc-900 dark:text-white uppercase tracking-wider mb-4">Write a Review</h3>
+                
+                {/* Star rating picker */}
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-zinc-550 dark:text-zinc-400 uppercase tracking-wide mb-2">Your Rating</label>
+                  <div className="flex items-center gap-1.5">
+                    {Array.from({ length: 5 }).map((_, i) => {
+                      const starVal = i + 1;
+                      const isHighlighted = hoveredRating !== null ? starVal <= hoveredRating : starVal <= ratingInput;
+                      return (
+                        <button
+                          type="button"
+                          key={i}
+                          onClick={() => setRatingInput(starVal)}
+                          onMouseEnter={() => setHoveredRating(starVal)}
+                          onMouseLeave={() => setHoveredRating(null)}
+                          className="text-amber-400 hover:scale-110 transition-all duration-150 cursor-pointer focus:outline-none"
+                        >
+                          <svg
+                            className={`h-7 w-7 ${isHighlighted ? "fill-amber-400" : "fill-zinc-200 dark:fill-zinc-800"}`}
+                            viewBox="0 0 20 20"
+                          >
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                          </svg>
+                        </button>
+                      );
+                    })}
+                    <span className="text-xs font-bold text-zinc-450 dark:text-zinc-500 ml-2">
+                      {hoveredRating !== null ? `${hoveredRating} Star${hoveredRating > 1 ? 's' : ''}` : `${ratingInput} Star${ratingInput > 1 ? 's' : ''}`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Review comment input */}
+                <div className="mb-4">
+                  <label htmlFor="comment-text" className="block text-xs font-bold text-zinc-550 dark:text-zinc-400 uppercase tracking-wide mb-2">Review Details</label>
+                  <textarea
+                    id="comment-text"
+                    rows={4}
+                    value={commentInput}
+                    onChange={(e) => setCommentInput(e.target.value)}
+                    placeholder="Share your experience with this product..."
+                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-4 py-3 text-xs text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-all font-medium"
+                    required
+                  />
+                </div>
+
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full sm:w-auto rounded-xl bg-zinc-950 hover:bg-zinc-850 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 px-6 py-3 text-xs font-extrabold shadow-sm hover:shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-current" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <span>Submit Review</span>
+                  )}
+                </button>
+              </form>
+            )}
+
             {/* List of Reviews */}
             <div className="space-y-4">
-              {product.reviews.map((rev, index) => (
+              {reviewsList.map((rev, index) => (
                 <div key={index} className="pb-4 border-b border-zinc-100 dark:border-zinc-800 last:border-b-0">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-zinc-900 dark:text-white">{rev.author}</span>
-                    <div className="flex text-amber-400">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <svg
-                          key={i}
-                          className={`h-3 w-3 ${i < rev.rating ? "fill-amber-400" : "fill-zinc-200 dark:fill-zinc-800"}`}
-                          viewBox="0 0 20 20"
-                        >
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                        </svg>
-                      ))}
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-zinc-900 dark:text-white">{rev.author}</span>
+                        <div className="flex text-amber-400">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <svg
+                              key={i}
+                              className={`h-3 w-3 ${i < rev.rating ? "fill-amber-400" : "fill-zinc-200 dark:fill-zinc-800"}`}
+                              viewBox="0 0 20 20"
+                            >
+                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                          ))}
+                        </div>
+                      </div>
+                      {rev.createdAt && (
+                        <span className="text-[10px] text-zinc-450 dark:text-zinc-500 mt-1 font-semibold">
+                          {new Date(rev.createdAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <p className="text-xs text-zinc-550 dark:text-zinc-400 font-normal leading-relaxed">{rev.content}</p>
@@ -590,14 +737,14 @@ export default function CollectionDetailsClient({
               {Array.from({ length: 5 }).map((_, i) => (
                 <svg
                   key={i}
-                  className={`h-3.5 w-3.5 ${i < Math.floor(product.rating) ? "fill-amber-450" : "fill-zinc-200 dark:fill-zinc-800"}`}
+                  className={`h-3.5 w-3.5 ${i < Math.floor(currentRating) ? "fill-amber-450" : "fill-zinc-200 dark:fill-zinc-800"}`}
                   viewBox="0 0 20 20"
                 >
                   <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                 </svg>
               ))}
             </div>
-            <span>{product.rating} ({product.ratingCount} reviews)</span>
+            <span>{currentRating} ({currentRatingCount} reviews)</span>
           </div>
         </div>
 

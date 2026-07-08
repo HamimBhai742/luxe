@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import CollectionDetailsClient from "@/components/collections/CollectionDetailsClient";
 import { notFound } from "next/navigation";
 
@@ -62,10 +63,17 @@ export default async function CollectionDetailPage({ params }: PageProps) {
       Waterproof: "10 ATM (100 meters)",
       Origin: "Swiss Made",
     },
-    reviews: product.reviews || [
-      { author: "Edward N.", rating: 5, content: "Superb build quality. The leather strap is extremely premium." },
-      { author: "Victoria P.", rating: 4, content: "Very elegant watch. Accurate timekeeping and solid glass finish." }
-    ],
+    reviews: product.reviews && product.reviews.length > 0
+      ? product.reviews.map((r: any) => ({
+          author: r.user?.name || "Anonymous",
+          rating: r.rating,
+          content: r.comment,
+          createdAt: r.createdAt,
+        }))
+      : [
+          { author: "Edward N.", rating: 5, content: "Superb build quality. The leather strap is extremely premium.", createdAt: "2024-10-24T12:00:00Z" },
+          { author: "Victoria P.", rating: 4, content: "Very elegant watch. Accurate timekeeping and solid glass finish.", createdAt: "2024-10-23T12:00:00Z" }
+        ],
     rating: product.rating || 5.0,
     ratingCount: product.ratingCount || 12,
   };
@@ -78,6 +86,6 @@ export default async function CollectionDetailPage({ params }: PageProps) {
   }));
 
   return (
-    <CollectionDetailsClient product={mappedProduct} allProducts={mappedAllProducts} />
+    <CollectionDetailsClient key={mappedProduct.id} product={mappedProduct} allProducts={mappedAllProducts} />
   );
 }

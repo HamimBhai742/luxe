@@ -1,11 +1,14 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import { useSubmitReviewMutation } from "@/lib/features/api/reviewApi";
 
 interface OrderItem {
+  id: string;
   name: string;
   image: string;
   specs: string;
@@ -58,6 +61,7 @@ export default function DashboardOrdersClient() {
             const rawItems = ord.items ? (typeof ord.items === "string" ? JSON.parse(ord.items) : ord.items) : [];
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const mappedItems = rawItems.map((item: any) => ({
+              id: item.id || item.productId,
               name: item.name || "Product Item",
               image: item.image || "https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=150",
               specs: item.specsText || "",
@@ -134,8 +138,41 @@ export default function DashboardOrdersClient() {
     document.body.removeChild(link);
   };
 
-  const handleReview = (name: string) => {
-    toast.success(`Opening review writer for: ${name}`);
+  const [submitReview] = useSubmitReviewMutation();
+  const [reviewProduct, setReviewProduct] = useState<{ id: string; name: string; image: string } | null>(null);
+  const [modalRating, setModalRating] = useState(5);
+  const [modalComment, setModalComment] = useState("");
+  const [modalHoveredRating, setModalHoveredRating] = useState<number | null>(null);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  const handleModalReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewProduct) return;
+    if (!modalComment.trim()) {
+      toast.error("Please enter a review comment.");
+      return;
+    }
+
+    setIsSubmittingReview(true);
+    try {
+      const res = await submitReview({
+        productId: reviewProduct.id,
+        rating: modalRating,
+        comment: modalComment.trim(),
+      }).unwrap();
+
+      if (res.success) {
+        toast.success("Review submitted successfully!");
+        setReviewProduct(null);
+        setModalComment("");
+        setModalRating(5);
+      }
+    } catch (err: any) {
+      console.error("Failed to submit review:", err);
+      toast.error(err?.data?.message || "Failed to submit review. You might have already reviewed this item.");
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   const handleBuyAgain = (name: string) => {
@@ -377,8 +414,16 @@ export default function DashboardOrdersClient() {
                         <h4 className="text-sm font-extrabold text-zinc-900 dark:text-white leading-snug">{item.name}</h4>
                         <p className="text-xs text-zinc-400 dark:text-zinc-555 mt-1 font-semibold">{item.specs}</p>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
                         <span className="text-sm font-extrabold text-zinc-900 dark:text-zinc-100">${item.price.toFixed(2)}</span>
+                        {ord.status === "Delivered" && (
+                          <button
+                            onClick={() => setReviewProduct({ id: item.id, name: item.name, image: item.image })}
+                            className="text-[10px] font-extrabold text-blue-600 hover:text-blue-500 dark:text-blue-450 dark:hover:text-blue-400 uppercase tracking-wider hover:underline cursor-pointer"
+                          >
+                            Review Item
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -470,7 +515,12 @@ export default function DashboardOrdersClient() {
                     {ord.status === "Delivered" ? (
                       <>
                         <button
-                          onClick={() => handleReview(ord.items[0]?.name || "item")}
+                          onClick={() => {
+                            if (ord.items.length > 0) {
+                              const itm = ord.items[0];
+                              setReviewProduct({ id: itm.id, name: itm.name, image: itm.image });
+                            }
+                          }}
                           className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 shadow-sm transition-all cursor-pointer"
                         >
                           Write a Review
@@ -659,9 +709,19 @@ export default function DashboardOrdersClient() {
                           {item.name}
                         </h5>
                         <p className="text-[10px] text-zinc-400 mt-1 font-semibold">{item.specs}</p>
-                        <span className="text-[10px] font-semibold text-zinc-450 block mt-0.5">
-                          Qty: {item.qty} • ${item.price.toFixed(2)}
-                        </span>
+                        <div className="flex justify-between items-center mt-1">
+                          <span className="text-[10px] font-semibold text-zinc-450 block">
+                            Qty: {item.qty} • ${item.price.toFixed(2)}
+                          </span>
+                          {ord.status === "Delivered" && (
+                            <button
+                              onClick={() => setReviewProduct({ id: item.id, name: item.name, image: item.image })}
+                              className="text-[10px] font-extrabold text-blue-600 dark:text-blue-450 uppercase tracking-wider hover:underline cursor-pointer"
+                            >
+                              Review
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -725,7 +785,12 @@ export default function DashboardOrdersClient() {
                     {ord.status === "Delivered" ? (
                       <>
                         <button
-                          onClick={() => handleReview(ord.items[0]?.name || "item")}
+                          onClick={() => {
+                            if (ord.items.length > 0) {
+                              const itm = ord.items[0];
+                              setReviewProduct({ id: itm.id, name: itm.name, image: itm.image });
+                            }
+                          }}
                           className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 px-3.5 py-2 text-xs font-bold text-zinc-650 dark:text-zinc-300"
                         >
                           Review
@@ -811,6 +876,120 @@ export default function DashboardOrdersClient() {
         </div>
 
       </div>
+
+      {/* Review Modal */}
+      {reviewProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-xs transition-opacity duration-300">
+          <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-3xl p-6 shadow-2xl overflow-hidden scale-100 transition-transform duration-300">
+            {/* Header */}
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-base font-extrabold text-zinc-900 dark:text-white uppercase tracking-wider">Write a Review</h3>
+                <p className="text-xs text-zinc-400 dark:text-zinc-555 mt-1 font-semibold">Share your experience with this item</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewProduct(null)}
+                className="p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-650 transition-colors cursor-pointer"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Product details summary in modal */}
+            <div className="flex items-center gap-4 p-3.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-850 rounded-2xl mb-6">
+              <div className="h-12 w-12 bg-white dark:bg-zinc-900 rounded-lg overflow-hidden flex items-center justify-center p-1 shrink-0">
+                <img
+                  src={reviewProduct.image}
+                  alt={reviewProduct.name}
+                  className="object-contain max-h-full max-w-full"
+                  style={{ width: "48px", height: "48px" }}
+                />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold text-zinc-900 dark:text-white truncate leading-snug">{reviewProduct.name}</h4>
+              </div>
+            </div>
+
+            <form onSubmit={handleModalReviewSubmit}>
+              {/* Star Rating Selection */}
+              <div className="mb-6">
+                <label className="block text-xs font-bold text-zinc-555 dark:text-zinc-400 uppercase tracking-wide mb-2.5">Your Rating</label>
+                <div className="flex items-center gap-2">
+                  {Array.from({ length: 5 }).map((_, i) => {
+                    const starVal = i + 1;
+                    const isHighlighted = modalHoveredRating !== null ? starVal <= modalHoveredRating : starVal <= modalRating;
+                    return (
+                      <button
+                        type="button"
+                        key={i}
+                        onClick={() => setModalRating(starVal)}
+                        onMouseEnter={() => setModalHoveredRating(starVal)}
+                        onMouseLeave={() => setModalHoveredRating(null)}
+                        className="text-amber-400 hover:scale-110 transition-all duration-150 cursor-pointer focus:outline-none"
+                      >
+                        <svg
+                          className={`h-8 w-8 ${isHighlighted ? "fill-amber-400" : "fill-zinc-200 dark:fill-zinc-850"}`}
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                      </button>
+                    );
+                  })}
+                  <span className="text-xs font-bold text-zinc-450 dark:text-zinc-555 ml-2">
+                    {modalHoveredRating !== null ? `${modalHoveredRating} Star${modalHoveredRating > 1 ? 's' : ''}` : `${modalRating} Star${modalRating > 1 ? 's' : ''}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Review Comment Details */}
+              <div className="mb-6">
+                <label htmlFor="modal-comment-text" className="block text-xs font-bold text-zinc-555 dark:text-zinc-400 uppercase tracking-wide mb-2">Review Details</label>
+                <textarea
+                  id="modal-comment-text"
+                  rows={4}
+                  value={modalComment}
+                  onChange={(e) => setModalComment(e.target.value)}
+                  placeholder="Share details about what you liked or disliked about this product..."
+                  className="w-full rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-4 py-3 text-xs text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-all font-medium"
+                  required
+                />
+              </div>
+
+              {/* Submit / Cancel Buttons */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReviewProduct(null)}
+                  className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-4 py-3 text-xs font-extrabold shadow-sm transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingReview}
+                  className="flex-1 rounded-xl bg-zinc-950 hover:bg-zinc-850 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-3 text-xs font-extrabold shadow-sm hover:shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {isSubmittingReview ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-current" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <span>Submit Review</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
