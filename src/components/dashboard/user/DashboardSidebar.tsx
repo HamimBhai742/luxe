@@ -123,7 +123,9 @@ export default function DashboardSidebar({ onCloseMobileDrawer }: SidebarProps) 
         {/* Links stack */}
         <nav className="space-y-1">
           {menuItems.map((item) => {
-            const isActive = pathname === item.path || (item.path !== "/" && pathname?.startsWith(item.path) && item.path !== "#");
+            const isActive = item.path === "/dashboard"
+              ? pathname === "/dashboard"
+              : pathname === item.path || (item.path !== "/" && pathname?.startsWith(item.path) && item.path !== "#");
             return (
               <Link
                 key={item.name}
