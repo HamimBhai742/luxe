@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import StoreProvider from "./StoreProvider";
 import { Toaster } from "sonner";
+import ChatBot from "@/components/layout/ChatBot";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -49,7 +50,10 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
-        <StoreProvider>{children}</StoreProvider>
+        <StoreProvider>
+          {children}
+          <ChatBot />
+        </StoreProvider>
         <Toaster richColors position="top-right" closeButton />
       </body>
     </html>
