@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect } from "react";
@@ -29,7 +30,7 @@ export default function AdminTransactionsClient() {
   const [filterSearch, setFilterSearch] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [selectedMethod, setSelectedMethod] = useState("All");
-  const [selectedDateRange, setSelectedDateRange] = useState("30d"); // mockup default: Last 30 Days
+  const [selectedDateRange, setSelectedDateRange] = useState("30d");
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -49,7 +50,17 @@ export default function AdminTransactionsClient() {
   // Transaction detail view modal state
   const [viewingTransaction, setViewingTransaction] = useState<TransactionItem | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api/v1";
+  // Log transaction modal state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [amount, setAmount] = useState("");
+  const [status, setStatus] = useState<"Succeeded" | "Pending" | "Failed" | "Refunded">("Succeeded");
+  const [method, setMethod] = useState<"Stripe" | "Wire Transfer" | "Credit Card" | "bKash">("Stripe");
+  const [customerAvatar, setCustomerAvatar] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const API_URL = process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001/api/v1";
 
   // Fetch transactions from API
   useEffect(() => {
@@ -87,18 +98,90 @@ export default function AdminTransactionsClient() {
     fetchTransactions();
   }, [API_URL, currentPage, itemsPerPage, filterSearch, selectedStatus, selectedMethod, selectedDateRange]);
 
+  const handleCreateTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customerName || !customerEmail || !amount) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      const res = await fetch(`${API_URL}/transactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName,
+          customerEmail,
+          amount,
+          status,
+          method,
+          customerAvatar: customerAvatar || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Transaction logged successfully!");
+        setIsCreateModalOpen(false);
+        setCustomerName("");
+        setCustomerEmail("");
+        setAmount("");
+        setStatus("Succeeded");
+        setMethod("Stripe");
+        setCustomerAvatar("");
+        setCurrentPage(1);
+
+        // Force reload grid values
+        const params = new URLSearchParams({
+          page: "1",
+          limit: String(itemsPerPage),
+          search: filterSearch,
+          status: selectedStatus,
+          method: selectedMethod,
+          dateRange: selectedDateRange,
+        });
+        const refetchRes = await fetch(`${API_URL}/transactions?${params.toString()}`);
+        const refetchData = await refetchRes.json();
+        if (refetchData.success) {
+          setTransactions(refetchData.data);
+          setTotalItems(refetchData.meta.total);
+          setTotalPages(refetchData.meta.totalPages);
+          if (refetchData.meta.stats) {
+            setStats(refetchData.meta.stats);
+          }
+        }
+      } else {
+        toast.error(data.message || "Failed to log transaction");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to post transaction to server.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const formatStatValue = (val: number, isCurrency = true) => {
+    const prefix = isCurrency ? "$" : "";
+    if (val >= 1000000) {
+      return `${prefix}${(val / 1000000).toFixed(2)}M`;
+    }
+    if (val >= 1000) {
+      return `${prefix}${(val / 1000).toFixed(1)}k`;
+    }
+    return `${prefix}${val.toLocaleString(undefined, { minimumFractionDigits: isCurrency ? 2 : 0, maximumFractionDigits: isCurrency ? 2 : 0 })}`;
+  };
 
   const renderStatusBadge = (s: string) => {
     switch (s) {
       case "Succeeded":
         return (
-          <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 px-3 py-0.5 text-xs font-black text-emerald-700 dark:text-emerald-400">
+          <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-955/20 border border-emerald-100 dark:border-emerald-900/30 px-3 py-0.5 text-xs font-black text-emerald-700 dark:text-emerald-400">
             &bull; Succeeded
           </span>
         );
       case "Pending":
         return (
-          <span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 px-3 py-0.5 text-xs font-black text-blue-700 dark:text-blue-400">
+          <span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-955/20 border border-blue-100 dark:border-blue-900/30 px-3 py-0.5 text-xs font-black text-blue-700 dark:text-blue-400">
             &bull; Pending
           </span>
         );
@@ -120,7 +203,7 @@ export default function AdminTransactionsClient() {
 
   const getInitials = (name: string) => {
     if (!name) return "?";
-    const parts = name.split(" ");
+    const parts = name.trim().split(" ");
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
@@ -128,7 +211,6 @@ export default function AdminTransactionsClient() {
   };
 
   const renderMethodIconAndLabel = (method: string) => {
-    // Generate icons matching UI design mockup
     switch (method) {
       case "Stripe":
         return (
@@ -185,6 +267,16 @@ export default function AdminTransactionsClient() {
           </nav>
           <h1 className="text-2xl font-black text-zinc-950 dark:text-white mt-1">Transactions</h1>
         </div>
+
+        <button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 text-xs font-bold shadow-sm shadow-blue-500/20 transition-all duration-200 cursor-pointer self-start sm:self-auto"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          <span>Log Transaction</span>
+        </button>
       </div>
 
       {/* STATS CONSOLE DECK */}
@@ -202,7 +294,7 @@ export default function AdminTransactionsClient() {
           </div>
           <div className="mt-4">
             <h2 className="text-3xl font-black text-zinc-900 dark:text-white">
-              ${(stats.totalVolume / 1000000).toFixed(1)}M
+              {formatStatValue(stats.totalVolume, true)}
             </h2>
             <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold mt-1.5 flex items-center gap-1">
               <span>+12.5%</span>
@@ -223,7 +315,7 @@ export default function AdminTransactionsClient() {
           </div>
           <div className="mt-4">
             <h2 className="text-3xl font-black text-zinc-900 dark:text-white">
-              ${(stats.pendingPayout / 1000).toFixed(0)}k
+              {formatStatValue(stats.pendingPayout, true)}
             </h2>
             <p className="text-xs text-zinc-400 dark:text-zinc-550 font-semibold mt-1.5">
               23 transfers processing
@@ -306,7 +398,7 @@ export default function AdminTransactionsClient() {
                   setSelectedStatus(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full pl-3.5 pr-8 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs font-bold text-zinc-750 appearance-none focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 cursor-pointer"
+                className="w-full pl-3.5 pr-8 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/50 text-xs font-bold text-zinc-755 appearance-none focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 cursor-pointer"
               >
                 <option value="All">Status</option>
                 <option value="Succeeded">Succeeded</option>
@@ -347,7 +439,7 @@ export default function AdminTransactionsClient() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse border-0">
             <thead>
-              <tr className="border-b border-zinc-100 dark:border-zinc-900 bg-zinc-50/20 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              <tr className="border-b border-zinc-100 dark:border-zinc-900 bg-zinc-50/20 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-550">
                 <th className="py-4 pl-6 font-bold text-[10px] border-0">Transaction ID</th>
                 <th className="py-4 px-4 font-bold text-[10px] border-0">Date & Time</th>
                 <th className="py-4 px-4 font-bold text-[10px] border-0">Customer</th>
@@ -404,7 +496,7 @@ export default function AdminTransactionsClient() {
                     {/* Customer Info */}
                     <td className="py-4 px-4 border-0">
                       <div className="flex items-center gap-3">
-                        {trx.customerAvatar ? (
+                        {trx.customerAvatar && trx.customerAvatar.trim() !== "" ? (
                           <div className="relative h-7.5 w-7.5 rounded-full overflow-hidden border border-zinc-200 dark:border-zinc-800">
                             <Image
                               src={trx.customerAvatar}
@@ -462,8 +554,9 @@ export default function AdminTransactionsClient() {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                           </svg>
                         ) : (
-                          <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                          <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                           </svg>
                         )}
                       </button>
@@ -529,7 +622,7 @@ export default function AdminTransactionsClient() {
             {/* Header */}
             <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-900 pb-4 mb-4">
               <div>
-                <h3 className="text-base font-extrabold text-zinc-950 dark:text-white">
+                <h3 className="text-base font-extrabold text-zinc-955 dark:text-white font-serif">
                   Transaction Audit Log
                 </h3>
                 <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-0.5">
@@ -598,6 +691,148 @@ export default function AdminTransactionsClient() {
                 Close Audit Record
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Log Transaction Modal */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-all duration-300 animate-fade-in">
+          <div className="w-full max-w-md transform overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-zinc-150 dark:border-zinc-800 dark:bg-zinc-950 scale-100 duration-300 flex flex-col">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-900 pb-4 mb-4">
+              <div>
+                <h3 className="text-base font-extrabold text-zinc-955 dark:text-white font-serif">
+                  Log New Payment Transaction
+                </h3>
+                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-0.5">
+                  Record an offline/online payment ledger entry
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="rounded-full bg-zinc-50 dark:bg-zinc-900 p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+              >
+                <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleCreateTransaction} className="space-y-4 text-xs">
+              
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-450 dark:text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Customer Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Liam Sterling"
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white transition-all placeholder:text-zinc-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-450 dark:text-zinc-400 uppercase tracking-wider mb-1.5">
+                  Customer Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. liam@workspace.io"
+                  value={customerEmail}
+                  onChange={(e) => setCustomerEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white transition-all placeholder:text-zinc-400"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-450 dark:text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Amount ($ USD) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="e.g. 450.00"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white transition-all placeholder:text-zinc-400"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-450 dark:text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Customer Avatar URL
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/avatar.jpg"
+                    value={customerAvatar}
+                    onChange={(e) => setCustomerAvatar(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-200 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 focus:bg-white transition-all placeholder:text-zinc-400"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-450 dark:text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Method *
+                  </label>
+                  <select
+                    value={method}
+                    onChange={(e) => setMethod(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 appearance-none focus:outline-none focus:bg-white transition-all cursor-pointer"
+                  >
+                    <option value="Stripe">Stripe</option>
+                    <option value="bKash">bKash</option>
+                    <option value="Wire Transfer">Wire Transfer</option>
+                    <option value="Credit Card">Credit Card</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-450 dark:text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Status *
+                  </label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-bold text-zinc-700 dark:text-zinc-300 appearance-none focus:outline-none focus:bg-white transition-all cursor-pointer"
+                  >
+                    <option value="Succeeded">Succeeded</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Failed">Failed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-900 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white hover:bg-zinc-50 dark:bg-zinc-900 dark:hover:bg-zinc-850 py-2.5 text-xs font-extrabold text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-xl bg-blue-600 hover:bg-blue-500 text-white py-2.5 text-xs font-extrabold shadow-sm shadow-blue-500/10 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {isSubmitting ? "Logging..." : "Log Transaction"}
+                </button>
+              </div>
+
+            </form>
 
           </div>
         </div>
