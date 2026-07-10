@@ -35,6 +35,8 @@ export default function DashboardOrdersClient() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMobileTab, setActiveMobileTab] = useState("wishlist"); // Highlight wishlist icon in mockup bottom nav
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   useEffect(() => {
     const fetchUserOrders = async () => {
@@ -272,6 +274,13 @@ export default function DashboardOrdersClient() {
     });
   }, [orders, activeFilter, searchQuery]);
 
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredOrders, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-zinc-500 font-bold space-y-4">
@@ -309,7 +318,10 @@ export default function DashboardOrdersClient() {
               return (
                 <button
                   key={tab}
-                  onClick={() => setActiveFilter(tab === "All Orders" ? "All" : tab)}
+                  onClick={() => {
+                    setActiveFilter(tab === "All Orders" ? "All" : tab);
+                    setCurrentPage(1);
+                  }}
                   className={`rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
                     isActive
                       ? "bg-blue-600 text-white shadow-xs"
@@ -332,7 +344,10 @@ export default function DashboardOrdersClient() {
                 type="text"
                 placeholder="Order ID or item..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-56 pl-9.5 pr-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 text-xs font-semibold text-zinc-800 dark:text-zinc-250 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 transition-all placeholder:text-zinc-400"
               />
             </div>
@@ -357,7 +372,7 @@ export default function DashboardOrdersClient() {
               <p className="mt-1 text-xs text-zinc-400">Try adjusting your filters or query to find items.</p>
             </div>
           ) : (
-            filteredOrders.map((ord) => (
+            paginatedOrders.map((ord) => (
               <div
                 key={ord.id}
                 className="bg-white dark:bg-zinc-900/50 border border-zinc-200/80 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-xs hover:shadow-sm transition-all"
@@ -611,6 +626,60 @@ export default function DashboardOrdersClient() {
               </div>
             ))
           )}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800 pt-6 mt-6">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs select-none transition-all"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                <span>Previous</span>
+              </button>
+
+              <div className="hidden sm:flex items-center gap-1.5">
+                {Array.from({ length: totalPages }).map((_, idx) => {
+                  const pageNum = idx + 1;
+                  const isActive = pageNum === currentPage;
+                  return (
+                    <button
+                      type="button"
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`h-9 w-9 rounded-xl text-xs font-black transition-all cursor-pointer select-none ${
+                        isActive
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-500/10"
+                          : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <span className="sm:hidden text-xs font-black text-zinc-500 dark:text-zinc-400">
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs select-none transition-all"
+              >
+                <span>Next</span>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
 
       </div>
@@ -630,7 +699,10 @@ export default function DashboardOrdersClient() {
               type="text"
               placeholder="Search orders..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full pl-9 pr-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-semibold outline-none placeholder:text-zinc-400"
             />
           </div>
@@ -643,7 +715,10 @@ export default function DashboardOrdersClient() {
             return (
               <button
                 key={tab}
-                onClick={() => setActiveFilter(tab)}
+                onClick={() => {
+                  setActiveFilter(tab);
+                  setCurrentPage(1);
+                }}
                 className={`rounded-full px-5 py-2 text-xs font-bold transition-all cursor-pointer shrink-0 border ${
                   isActive
                     ? "bg-blue-600 border-blue-600 text-white"
@@ -663,7 +738,7 @@ export default function DashboardOrdersClient() {
               <span className="text-xs font-bold text-zinc-400">No matching orders</span>
             </div>
           ) : (
-            filteredOrders.map((ord) => (
+            paginatedOrders.map((ord) => (
               <div
                 key={ord.id}
                 className="bg-white dark:bg-zinc-900 border border-zinc-150/60 dark:border-zinc-850 rounded-2xl p-4 shadow-sm space-y-4"
@@ -876,6 +951,37 @@ export default function DashboardOrdersClient() {
 
               </div>
             ))
+          )}
+
+          {/* Mobile Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-zinc-200 dark:border-zinc-800/80 pt-4 mt-4">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="inline-flex items-center gap-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-zinc-700 dark:text-zinc-300 disabled:opacity-50"
+              >
+                <svg className="h-4 w-4 text-zinc-400" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                <span>Prev</span>
+              </button>
+              <span className="text-xs font-black text-zinc-500 dark:text-zinc-400">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="inline-flex items-center gap-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-zinc-700 dark:text-zinc-300 disabled:opacity-50"
+              >
+                <span>Next</span>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+            </div>
           )}
         </div>
 
