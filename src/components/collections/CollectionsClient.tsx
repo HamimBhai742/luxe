@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
@@ -13,6 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSyncDbCartMutation } from "@/lib/features/api/cartApi";
 
 interface Product {
+  description: string;
   id: number;
   name: string;
   brand: string;
@@ -61,6 +63,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
 
   // Navigation & UI States
   const searchParams = useSearchParams();
+  const searchParam = searchParams ? searchParams.get("search") || "" : "";
   const [selectedCategories, setSelectedCategories] = useState<string[]>(() => {
     const categoryParam = searchParams.get("category");
     if (categoryParam) {
@@ -81,6 +84,12 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
   });
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [currentPage, setCurrentPage] = useState<number>(1);
+
+  const clearSearch = () => {
+    const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+    params.delete("search");
+    router.push(`/collections?${params.toString()}`);
+  };
 
   // Mobile Drawers
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
@@ -214,6 +223,16 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
   // Filtering Logic
   const filteredProducts = useMemo(() => {
     return activeProducts.filter((product) => {
+      // Search query filter
+      if (searchParam) {
+        const query = searchParam.toLowerCase();
+        const matchesName = (product.name || "").toLowerCase().includes(query);
+        const matchesDescription = (product.description || "").toLowerCase().includes(query);
+        const matchesCategory = (product.category || "").toLowerCase().includes(query);
+        if (!matchesName && !matchesDescription && !matchesCategory) {
+          return false;
+        }
+      }
       // Category filter
       if (
         selectedCategories.length > 0 &&
@@ -235,7 +254,7 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
       }
       return true;
     });
-  }, [activeProducts, selectedCategories, priceRange, selectedRating, inStockOnly]);
+  }, [activeProducts, selectedCategories, priceRange, selectedRating, inStockOnly, searchParam]);
 
   // Sorting Logic
   const sortedProducts = useMemo(() => {
@@ -272,33 +291,48 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
       </nav>
 
       {/* MOBILE ONLY SUB-HEADER */}
-      <div className="md:hidden flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4 mb-6">
-        <span className="text-sm font-semibold text-zinc-505 dark:text-zinc-400">
-          Showing <span className="font-bold text-zinc-900 dark:text-white">{sortedProducts.length}</span> items
-        </span>
-        <div className="flex gap-2">
-          {/* Mobile Filter Button */}
-          <button
-            onClick={() => setIsFilterDrawerOpen(true)}
-            className="flex items-center gap-1.5 rounded-full bg-zinc-200/60 dark:bg-zinc-800 px-4 py-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
-            </svg>
-            <span>Filter</span>
-          </button>
-          
-          {/* Mobile Sort Button */}
-          <button
-            onClick={() => setIsSortDrawerOpen(true)}
-            className="flex items-center gap-1.5 rounded-full bg-zinc-200/60 dark:bg-zinc-800 px-4 py-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
-            </svg>
-            <span>Sort</span>
-          </button>
+      <div className="md:hidden flex flex-col gap-3 border-b border-zinc-200 dark:border-zinc-800 pb-4 mb-6">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-zinc-505 dark:text-zinc-400">
+            Showing <span className="font-bold text-zinc-900 dark:text-white">{sortedProducts.length}</span> items
+          </span>
+          <div className="flex gap-2">
+            {/* Mobile Filter Button */}
+            <button
+              onClick={() => setIsFilterDrawerOpen(true)}
+              className="flex items-center gap-1.5 rounded-full bg-zinc-200/60 dark:bg-zinc-800 px-4 py-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+              </svg>
+              <span>Filter</span>
+            </button>
+            
+            {/* Mobile Sort Button */}
+            <button
+              onClick={() => setIsSortDrawerOpen(true)}
+              className="flex items-center gap-1.5 rounded-full bg-zinc-200/60 dark:bg-zinc-800 px-4 py-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
+              </svg>
+              <span>Sort</span>
+            </button>
+          </div>
         </div>
+        {searchParam && (
+          <div className="flex items-center justify-between bg-zinc-100 dark:bg-zinc-900/50 px-3 py-2 rounded-xl">
+            <span className="text-xs text-zinc-600 dark:text-zinc-400 truncate">
+              Search: <span className="font-bold text-zinc-800 dark:text-zinc-200">"{searchParam}"</span>
+            </span>
+            <button
+              onClick={clearSearch}
+              className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-500 transition-colors ml-2 cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {/* MAIN LAYOUT */}
@@ -421,9 +455,24 @@ export default function CollectionsClient({ products }: CollectionsClientProps) 
           
           {/* DESKTOP HEADER ACTION BAR */}
           <div className="hidden md:flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 pb-4 mb-6">
-            <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-              Showing <span className="font-bold text-zinc-900 dark:text-white">{sortedProducts.length}</span> premium items
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                Showing <span className="font-bold text-zinc-900 dark:text-white">{sortedProducts.length}</span> premium items
+              </span>
+              {searchParam && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-950/30 px-3 py-1 text-xs font-bold text-blue-600 dark:text-blue-400 ring-1 ring-inset ring-blue-500/20">
+                  Search: "{searchParam}"
+                  <button
+                    onClick={clearSearch}
+                    className="flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50 cursor-pointer"
+                  >
+                    <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-6">
               
               {/* Sort Selection */}

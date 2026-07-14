@@ -1,12 +1,64 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useAppSelector, useAppDispatch } from "@/lib/hooks";
 import { clearCredentials } from "@/lib/features/auth/authSlice";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import { useGetWishlistQuery } from "@/lib/features/api/wishlistApi";
+
+function SearchBar() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const currentSearchParam = searchParams ? searchParams.get("search") || "" : "";
+
+  const [searchQuery, setSearchQuery] = useState(currentSearchParam);
+  const [prevSearchParam, setPrevSearchParam] = useState(currentSearchParam);
+
+  if (currentSearchParam !== prevSearchParam) {
+    setSearchQuery(currentSearchParam);
+    setPrevSearchParam(currentSearchParam);
+  }
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      router.push(`/collections?search=${encodeURIComponent(searchQuery.trim())}`);
+    } else {
+      router.push("/collections");
+    }
+  };
+
+  return (
+    <form onSubmit={handleSearchSubmit} className="hidden max-w-xs flex-1 px-4 lg:block">
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+          <svg
+            className="h-4.5 w-4.5 text-zinc-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth="1.5"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.602 10.602z"
+            />
+          </svg>
+        </div>
+        <input
+          type="text"
+          placeholder="Search premium products..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full rounded-md border-0 bg-zinc-50 py-1.5 pl-10 pr-3 text-sm text-zinc-900 ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 dark:bg-zinc-900 dark:text-white dark:ring-zinc-800"
+        />
+      </div>
+    </form>
+  );
+}
 
 export default function Header() {
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
@@ -62,30 +114,11 @@ export default function Header() {
         </div>
 
         {/* Middle-Left: Search Bar */}
-        <div className="hidden max-w-xs flex-1 px-4 lg:block">
-          <div className="relative">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <svg
-                className="h-4.5 w-4.5 text-zinc-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth="1.5"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.602 10.602z"
-                />
-              </svg>
-            </div>
-            <input
-              type="text"
-              placeholder="Search premium products..."
-              className="w-full rounded-md border-0 bg-zinc-50 py-1.5 pl-10 pr-3 text-sm text-zinc-900 ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 dark:bg-zinc-900 dark:text-white dark:ring-zinc-800"
-            />
-          </div>
-        </div>
+        <Suspense fallback={
+          <div className="hidden max-w-xs flex-1 px-4 lg:block h-9 bg-zinc-50 dark:bg-zinc-900 rounded-md animate-pulse" />
+        }>
+          <SearchBar />
+        </Suspense>
 
         {/* Middle: Navigation Links */}
         <nav className="hidden md:flex space-x-8">

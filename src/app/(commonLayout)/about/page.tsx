@@ -168,7 +168,7 @@ export default function AboutPage() {
                   className="object-cover"
                 />
               </div>
-              <div className="relative aspect-[3/4] overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-100 translate-x-4 sm:translate-x-6">
+              <div className="relative aspect-3/4 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-100 translate-x-4 sm:translate-x-6">
                 <Image
                   src="https://images.unsplash.com/photo-1517336714731-489689fd1ca8?q=80&w=350&auto=format&fit=crop"
                   alt="AuraBook Desk Layout"
@@ -178,7 +178,7 @@ export default function AboutPage() {
               </div>
             </div>
             <div className="space-y-4 sm:space-y-6 pt-8">
-              <div className="relative aspect-[3/4] overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-100 -translate-x-4 sm:-translate-x-6">
+              <div className="relative aspect-3/4 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm bg-zinc-100 -translate-x-4 sm:-translate-x-6">
                 <Image
                   src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?q=80&w=350&auto=format&fit=crop"
                   alt="Premium Workspace Accessories"
@@ -257,7 +257,7 @@ export default function AboutPage() {
               <div key={idx} className="relative flex flex-col sm:flex-row items-start sm:justify-between group">
                 
                 {/* Timeline Bubble indicator */}
-                <div className="absolute left-4 sm:left-1/2 transform -translate-x-[7px] sm:-translate-x-1/2 flex h-4 w-4 items-center justify-center rounded-full bg-white dark:bg-black border-2 border-blue-600 dark:border-blue-400 z-10 group-hover:scale-125 transition-transform duration-300" />
+                <div className="absolute left-4 sm:left-1/2 transform translate-x-[-7px] sm:-translate-x-1/2 flex h-4 w-4 items-center justify-center rounded-full bg-white dark:bg-black border-2 border-blue-600 dark:border-blue-400 z-10 group-hover:scale-125 transition-transform duration-300" />
 
                 {/* Left block (renders empty on desktop if odd, or content if even) */}
                 <div className={`w-full sm:w-[45%] pl-10 sm:pl-0 ${isEven ? "sm:text-right" : "sm:order-2"}`}>

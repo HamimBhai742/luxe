@@ -14,41 +14,7 @@ export default function FAQPage() {
 
   const rawFaqs = data?.success && data.data ? data.data : [];
 
-  // Fallback defaults for visual richness if database is empty
-  const fallbackFaqs = [
-    {
-      id: "mock-1",
-      question: "What makes LUXE peripherals different from regular electronics?",
-      answer: "LUXE components prioritize minimalist, distraction-free aesthetics. We source high-grade mechanical parts, matte aluminum shells, and Swiss movement designs that are built to look premium and outlast ordinary plastic devices.",
-      category: "Products",
-    },
-    {
-      id: "mock-2",
-      question: "Are these gadgets compatible with macOS, Windows, and Linux?",
-      answer: "Yes. All of our workspace electronics, keyboards, and audio docks support universal plug-and-play protocols and connect seamlessly across macOS, Windows, Linux, and mobile operating systems.",
-      category: "Products",
-    },
-    {
-      id: "mock-3",
-      question: "How long does shipping take, and do you ship worldwide?",
-      answer: "We ship to over 85 countries worldwide. Standard shipping takes 5-7 business days, while express courier pathways take 2-3 business days. All shipments include carbon-offset transport pathways.",
-      category: "Shipping",
-    },
-    {
-      id: "mock-4",
-      question: "What is your warranty and refund policy?",
-      answer: "We offer a 2-year comprehensive hardware warranty on all workspace items. Return requests can be initiated within 14 calendar days of receipt, provided the items remain in their original glassmorphic packaging.",
-      category: "Warranties",
-    },
-    {
-      id: "mock-5",
-      question: "What payment gateways are supported during checkout?",
-      answer: "We accept all major international credit cards, Apple Pay, Google Pay, Stripe, and Paypal. All transaction information is encrypted and secured.",
-      category: "Payments",
-    },
-  ];
-
-  const faqsToDisplay = rawFaqs.length > 0 ? rawFaqs : fallbackFaqs;
+  const faqsToDisplay = rawFaqs;
 
   // Filter based on search keywords and tab categories
   const filteredFaqs = faqsToDisplay.filter((faq) => {
