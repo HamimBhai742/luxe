@@ -6,11 +6,34 @@ import Image from "next/image";
 import { toast } from "sonner";
 import { useAppSelector } from "@/lib/hooks";
 import AdminDashboardSidebar from "@/components/dashboard/admin/AdminDashboardSidebar";
+import {
+  useGetNotificationsQuery,
+  useMarkAllAsReadMutation,
+  useMarkSingleAsReadMutation,
+  useClearAllNotificationsMutation,
+} from "@/lib/features/api/notificationApi";
 
 export default function AdminDashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [searchVal, setSearchVal] = useState("");
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+
+  const { data: notifData } = useGetNotificationsQuery(undefined, { pollingInterval: 6000 });
+  const [markAllAsRead] = useMarkAllAsReadMutation();
+  const [markSingleAsRead] = useMarkSingleAsReadMutation();
+  const [clearAllNotifications] = useClearAllNotificationsMutation();
+
+  const notifications = notifData?.success ? notifData.data : [];
+  const unreadCount = notifications.filter((n: any) => !n.isRead).length;
+
+  // Close notifications popover on click outside
+  useEffect(() => {
+    if (!isNotifOpen) return;
+    const handleCloseNotif = () => setIsNotifOpen(false);
+    document.addEventListener("click", handleCloseNotif);
+    return () => document.removeEventListener("click", handleCloseNotif);
+  }, [isNotifOpen]);
 
   useEffect(() => {
     const authUserStr = localStorage.getItem("authUser");
@@ -83,17 +106,138 @@ export default function AdminDashboardLayout({ children }: { children: React.Rea
           {/* Right Action Icons */}
           <div className="flex items-center gap-4 sm:gap-6">
             
-            {/* Notification bell with red badge */}
-            <button
-              onClick={() => toast.info("No new administrative notifications.")}
-              className="relative text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer"
-              title="Notifications"
-            >
-              <svg className="h-5.5 w-5.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-              </svg>
-              <span className="absolute top-0 right-0 flex h-2 w-2 rounded-full bg-red-500"></span>
-            </button>
+            {/* Notification bell with dropdown wrapper */}
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => setIsNotifOpen(!isNotifOpen)}
+                className="relative text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer p-1 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                title="Notifications"
+              >
+                <svg className="h-5.5 w-5.5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute top-0 right-0 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white shadow-xs animate-pulse">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Popover Dropdown */}
+              {isNotifOpen && (
+                <div className="absolute right-0 mt-3 w-80 sm:w-96 origin-top-right rounded-3xl border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 z-50 text-left animate-fade-in flex flex-col max-h-[500px]">
+                  
+                  {/* Dropdown Header */}
+                  <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3 mb-3">
+                    <span className="text-sm font-extrabold text-zinc-950 dark:text-white uppercase font-serif tracking-wider">
+                      Notifications {unreadCount > 0 && `(${unreadCount} new)`}
+                    </span>
+                    <div className="flex gap-2">
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await markAllAsRead().unwrap();
+                              toast.success("All notifications marked as read!");
+                            } catch (e) {
+                              toast.error("Failed to mark all as read");
+                            }
+                          }}
+                          className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-500 cursor-pointer"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      {notifications.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await clearAllNotifications().unwrap();
+                              toast.success("Notifications cleared!");
+                            } catch (e) {
+                              toast.error("Failed to clear notifications");
+                            }
+                          }}
+                          className="text-[10px] font-bold text-red-600 dark:text-red-400 hover:text-red-500 cursor-pointer"
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dropdown List Body */}
+                  <div className="overflow-y-auto space-y-2 flex-1 pr-1">
+                    {notifications.length === 0 ? (
+                      <div className="py-12 text-center text-zinc-400 dark:text-zinc-500 font-semibold text-xs flex flex-col items-center justify-center gap-2">
+                        <svg className="h-10 w-10 text-zinc-300 dark:text-zinc-800" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+                        </svg>
+                        <span>No administrative notifications</span>
+                      </div>
+                    ) : (
+                      notifications.map((notif: any) => {
+                        let typeColor = "bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-950/20 dark:border-blue-900/50 dark:text-blue-400";
+                        if (notif.type === "new_order") {
+                          typeColor = "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:border-emerald-900/50 dark:text-emerald-400";
+                        } else if (notif.type === "cancelled_order") {
+                          typeColor = "bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/20 dark:border-rose-900/50 dark:text-rose-400";
+                        }
+
+                        return (
+                          <div
+                            key={notif.id}
+                            onClick={async () => {
+                              if (!notif.isRead) {
+                                try {
+                                  await markSingleAsRead({ id: notif.id }).unwrap();
+                                } catch (e) {
+                                  console.error("Failed to mark single read:", e);
+                                }
+                              }
+                            }}
+                            className={`flex gap-3 border rounded-2xl p-3 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/30 transition-all ${
+                              notif.isRead
+                                ? "bg-white border-zinc-100 dark:bg-zinc-900 dark:border-zinc-800/50 opacity-60"
+                                : "bg-blue-50/10 border-blue-100/50 dark:bg-blue-950/5 dark:border-blue-900/20 font-semibold"
+                            }`}
+                          >
+                            {/* Type Icon Indicator */}
+                            <div className={`h-8 w-8 rounded-xl border flex items-center justify-center shrink-0 ${typeColor}`}>
+                              {notif.type === "new_order" && (
+                                <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                                </svg>
+                              )}
+                              {notif.type === "cancelled_order" && (
+                                <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              )}
+                              {notif.type !== "new_order" && notif.type !== "cancelled_order" && (
+                                <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 111.063.852l-.708 2.836a.75.75 0 001.063.852l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                                </svg>
+                              )}
+                            </div>
+
+                            {/* Message Details */}
+                            <div className="flex-1 flex flex-col text-xs">
+                              <span className="font-extrabold text-zinc-900 dark:text-white">{notif.title}</span>
+                              <span className="text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2 leading-relaxed">{notif.message}</span>
+                              <span className="text-[9px] text-zinc-400 mt-1.5 font-bold">
+                                {new Date(notif.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                </div>
+              )}
+            </div>
 
             {/* Grid app-launcher icon */}
             <button
